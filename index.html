@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EquipIQ | Sustainable CapEx & Lifecycle Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@500;600;700&family=Outfit:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="/manifest.json">
+</head>
+<body>
+    <!-- Ambient Background -->
+    <div class="ambient one"></div>
+    <div class="ambient two"></div>
+    <div class="ambient three"></div>
+
+    <!-- Auth Overlay -->
+    <div class="auth-overlay" id="authScreen">
+        <div class="auth-box">
+            <div class="logo-mark" style="font-size:32px; margin-bottom:10px;">◈</div>
+            <h2>EquipIQ</h2>
+            <p>Sustainable CapEx & Lifecycle Intelligence</p>
+            <div class="modal-input-group" style="margin-top:20px;">
+                <input type="email" id="loginEmail" class="modal-input" placeholder="Email">
+            </div>
+            <div class="modal-input-group">
+                <input type="password" id="loginPass" class="modal-input" placeholder="Password">
+            </div>
+            <button class="btn btn-primary w-100" onclick="handleLogin()">Sign In</button>
+            <button class="btn btn-ghost w-100" style="margin-top:8px;" onclick="continueAsGuest()">Continue as Guest</button>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+            <div class="logo">
+                <span class="logo-mark">◈</span>
+                <div>
+                    <h1>EquipIQ</h1>
+                    <small>FINANCE & ESG INTELLIGENCE</small>
+                </div>
+            </div>
+            <div class="nav-label">CORE</div>
+            <div class="nav active" data-page="dashboard"><span class="nav-icon">▦</span>Command Center</div>
+            <div class="nav" data-page="equipment"><span class="nav-icon">◈</span>Equipment</div>
+            <div class="nav" data-page="maintenance"><span class="nav-icon">⌁</span>Maintenance</div>
+            <div class="nav" data-page="warranty"><span class="nav-icon">◆</span>Warranty</div>
+            <div class="nav" data-page="documents"><span class="nav-icon">▤</span>Documents</div>
+            <div class="nav-label">INTELLIGENCE</div>
+            <div class="nav" data-page="analytics"><span class="nav-icon">📊</span>Analytics</div>
+            <div class="nav" data-page="decision"><span class="nav-icon">⟳</span>Repair vs Replace</div>
+            <div class="nav" data-page="sustainability"><span class="nav-icon">🌍</span>Sustainability</div>
+            <div class="nav" data-page="ai"><span class="nav-icon">✦</span>AI Agent</div>
+            <div class="nav-label">SYSTEM</div>
+            <div class="nav" data-page="inventory"><span class="nav-icon">▣</span>Inventory</div>
+            <div class="nav" data-page="audit"><span class="nav-icon">⟶</span>Audit Logs</div>
+            <div class="nav" data-page="settings"><span class="nav-icon">⚙</span>Settings</div>
+        </div>
+        <div class="sidebar-bottom">
+            <button class="btn btn-ghost w-100" onclick="openQRScanner()">📷 Scan QR</button>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- Main -->
+    <main class="main">
+        <header class="topbar">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <button class="icon mobile-menu" onclick="toggleSidebar()">☰</button>
+                <div>
+                    <div class="top-title" id="pageTitle">Command Center</div>
+                    <div class="top-sub">EQUIPIQ · FINANCE & SUSTAINABLE LIFECYCLE PLATFORM</div>
+                </div>
+            </div>
+            <div class="top-right">
+                <div id="connection-status" class="badge green" style="display:flex; align-items:center; gap:6px; padding:6px 10px;">
+                    <span class="live-dot" style="width:6px; height:6px;"></span> ONLINE
+                </div>
+                <button class="icon" onclick="toggleFullscreen()">⛶</button>
+                <button class="icon admin-only" onclick="openRegisterEquipmentModal()">+</button>
+                <div id="pending-sync-badge" class="pending-badge" style="display:none; background:var(--orange); color:white; border-radius:50%; width:20px; height:20px; align-items:center; justify-content:center; font-size:9px; font-weight:700; font-family:'Sora',sans-serif;" title="Pending offline changes"></div>
+                <div class="avatar" id="userAvatar">G</div>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- Dashboard -->
+            <section id="dashboard" class="page active">
+                <div class="hero">
+                    <div>
+                        <div class="eyebrow"><span class="live-dot"></span>CAPEX OPTIMIZATION · CLIMATE ACTION</div>
+                        <h2>Optimize <span class="gradient-text">Capital Expenditure</span><br>& Drive Climate Action</h2>
+                        <p>EquipIQ merges financial TCO analysis with Scope 3 carbon tracking to optimize asset lifecycles. We empower industries to protect the planet while maximizing CapEx efficiency through sustainable maintenance and AI-driven ESG insights.</p>
+                        <div class="hero-buttons">
+                            <button class="btn btn-primary" onclick="navigate('equipment')">Explore Assets</button>
+                            <button class="btn btn-ghost" onclick="navigate('decision')">Run TCO & ESG Analysis</button>
+                        </div>
+                    </div>
+                    <div class="hud">
+                        <div class="hud-line line1"></div>
+                        <div class="hud-line line2"></div>
+                        <div class="hud-label one">FINANCE</div>
+                        <div class="hud-label two">ESG TRACKER</div>
+                        <div class="hud-label three">AI ONLINE</div>
+                        <div class="hud-core">◈</div>
+                    </div>
+                </div>
+
+                <div class="stats" id="dashStats"></div>
+
+                <div class="grid2">
+                    <div class="card">
+                        <div class="card-head">
+                            <div>
+                                <div class="card-title">Maintenance Cost Trend</div>
+                                <div class="card-sub">6-MONTH ROLLING</div>
+                            </div>
+                            <span class="badge blue">CHART</span>
+                        </div>
+                        <div class="chart"><canvas id="costChart"></canvas></div>
+                    </div>
+                    <div class="card ai-card">
+                        <div class="card-head">
+                            <div class="ai-top">
+                                <span class="ai-symbol">✦</span>
+                                <div>
+                                    <div class="card-title">AI Intelligence</div>
+                                    <div class="card-sub">PREDICTIVE INSIGHTS</div>
+                                </div>
+                                <span class="ai-status">● LIVE</span>
+                            </div>
+                        </div>
+                        <div class="ai-insight" id="dashAI1"><h4>Analyzing...</h4><p>Loading insights...</p></div>
+                        <div class="ai-insight" id="dashAI2"><h4>Analyzing...</h4><p>Loading insights...</p></div>
+                    </div>
+                </div>
+
+                <!-- ESG Tracker -->
+                <div class="card" style="border-color: rgba(34,197,94,0.2); background: linear-gradient(135deg, rgba(34,197,94,0.05), transparent); margin-bottom: 20px;">
+                    <div class="card-head">
+                        <div>
+                            <div class="card-title" style="color:var(--green);">Sustainability & ESG Impact</div>
+                            <div class="card-sub">CARBON MITIGATION & E-WASTE DIVERTED</div>
+                        </div>
+                        <span class="badge green">NET ZERO TRACKER</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px; text-align:center;">
+                        <div>
+                            <div style="font-family:'Sora',sans-serif; font-size:24px; font-weight:700; color:var(--green);" id="esg-carbon-saved">0 kg</div>
+                            <div style="font-size:9px; color:var(--muted); letter-spacing:1px; margin-top:5px;">CO2e EMISSIONS PREVENTED</div>
+                        </div>
+                        <div>
+                            <div style="font-family:'Sora',sans-serif; font-size:24px; font-weight:700; color:var(--cyan);" id="esg-ewaste">0 kg</div>
+                            <div style="font-size:9px; color:var(--muted); letter-spacing:1px; margin-top:5px;">E-WASTE DIVERTED FROM LANDFILL</div>
+                        </div>
+                        <div>
+                            <div style="font-family:'Sora',sans-serif; font-size:24px; font-weight:700; color:var(--blue);" id="esg-energy-saved">0 kWh</div>
+                            <div style="font-size:9px; color:var(--muted); letter-spacing:1px; margin-top:5px;">ENERGY CONSUMPTION REDUCED</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-head">
+                        <div>
+                            <div class="card-title">Critical Assets</div>
+                            <div class="card-sub">LOWEST HEALTH SCORES</div>
+                        </div>
+                    </div>
+                    <table class="table">
+                        <thead><tr><th>EQUIPMENT</th><th>HEALTH</th><th>STATUS</th></tr></thead>
+                        <tbody id="dashCriticalTable"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Equipment -->
+            <section id="equipment" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Equipment Intelligence</div><div class="card-sub">REGISTERED ASSET REGISTRY</div></div>
+                    <button class="btn btn-primary admin-only" onclick="openRegisterEquipmentModal()">+ Register Asset</button>
+                </div>
+                <div class="asset-grid" id="equipGrid"></div>
+            </section>
+
+            <!-- Maintenance -->
+            <section id="maintenance" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Maintenance Operations</div><div class="card-sub">WORK ORDER QUEUE</div></div>
+                    <button class="btn btn-primary admin-only" onclick="openNewWorkOrderModal()">+ New Work Order</button>
+                </div>
+                <div class="stats" id="maintStats"></div>
+                <div class="card">
+                    <table class="table">
+                        <thead><tr><th>WO #</th><th>EQUIPMENT</th><th>TYPE</th><th>TECH</th><th>COST</th><th>STATUS</th></tr></thead>
+                        <tbody id="maintTable"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Warranty -->
+            <section id="warranty" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Warranty Intelligence</div><div class="card-sub">COVERAGE & CLAIM TRACKING</div></div>
+                    <button class="btn btn-primary admin-only" onclick="openNewWarrantyModal()">+ Add Warranty</button>
+                </div>
+                <div class="stats" id="warrStats"></div>
+                <div class="card">
+                    <table class="table">
+                        <thead><tr><th>EQUIPMENT</th><th>SUPPLIER</th><th>START</th><th>EXPIRY</th><th>STATUS</th></tr></thead>
+                        <tbody id="warrTable"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Documents / OCR -->
+            <section id="documents" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Document Intelligence</div><div class="card-sub">OCR-POWERED INGESTION PIPELINE</div></div>
+                </div>
+                <div class="card">
+                    <div class="modal-input-group">
+                        <label class="modal-label">Upload Receipt / Invoice</label>
+                        <input type="file" id="file-upload" class="modal-input" accept="image/*">
+                    </div>
+                    <button class="btn btn-primary" onclick="processRealOCR()">Run OCR Extraction</button>
+                    <div id="ocr-progress" class="hidden" style="margin-top:15px;">
+                        <div class="progress"><span id="ocr-progress-bar" style="width:0%;"></span></div>
+                    </div>
+                    <div id="ocr-result" class="hidden" style="margin-top:20px;">
+                        <h3 style="font-family:'Sora',sans-serif; margin-bottom:10px;">Extracted Data</h3>
+                        <div id="ocr-extraction-data"></div>
+                        <button class="btn btn-primary" onclick="confirmOCR()">Commit as Trusted Record</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analytics -->
+            <section id="analytics" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Lifecycle Analytics</div><div class="card-sub">MTBF · MTTR · COMPLIANCE</div></div>
+                </div>
+                <div class="stats">
+                    <div class="stat"><div class="stat-value" id="stat-mtbf">--</div><div class="stat-label">MTBF (DAYS)</div></div>
+                    <div class="stat"><div class="stat-value" id="stat-mttr">--</div><div class="stat-label">MTTR (HRS)</div></div>
+                    <div class="stat"><div class="stat-value" id="stat-compliance">--</div><div class="stat-label">PM COMPLIANCE %</div></div>
+                </div>
+                <div class="grid2">
+                    <div class="card">
+                        <div class="card-title">Failure Frequency</div>
+                        <div class="chart"><canvas id="failureChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">PM Compliance Trend</div>
+                        <div class="chart"><canvas id="complianceChart"></canvas></div>
+                    </div>
+                </div>
+                
+                <!-- ESG Analytics Chart -->
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-head">
+                        <div>
+                            <div class="card-title">Scope 3 Carbon Mitigation Trend</div>
+                            <div class="card-sub">CO2e AVOIDED BY REPAIR ACTIONS</div>
+                        </div>
+                        <span class="badge green">ESG CHART</span>
+                    </div>
+                    <div class="chart"><canvas id="esgChart"></canvas></div>
+                </div>
+            </section>
+
+            <!-- Decision / TCO -->
+            <section id="decision" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Economic Decision Engine</div><div class="card-sub">TCO · NPV · SCOPE 3 CARBON IMPACT</div></div>
+                </div>
+                <div class="card">
+                    <div class="modal-input-group">
+                        <label class="modal-label">Select Equipment</label>
+                        <select id="tco-equipment-select" class="modal-input" onchange="loadComponentForTCO(this.value)">
+                            <option value="">Select Equipment...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-ghost" onclick="fetchCurrentMarketPrice()">🌐 Fetch Market Price for Replacement</button>
+                    <div id="depreciation-summary" class="agent-trace" style="margin-top:15px;">Select an asset to begin analysis.</div>
+                </div>
+
+                <div class="decision">
+                    <div class="cost">
+                        <h3>Repair Status Quo</h3>
+                        <div class="input-group"><label>Immediate Quote (Rs.)</label><input type="number" id="repair-quote"></div>
+                        <div class="input-group"><label>Annual Maintenance (Rs.)</label><input type="number" id="repair-hist-maint"></div>
+                        <div class="input-group"><label>Wear Factor (%)</label><input type="number" id="repair-wear"></div>
+                        <div class="input-group"><label>Failures/Year</label><input type="number" id="repair-failures"></div>
+                        <div class="input-group"><label>MTTR (hrs)</label><input type="number" id="repair-mttr"></div>
+                        <div class="input-group"><label>Hourly Loss (Rs.)</label><input type="number" id="hourly-loss"></div>
+                        <div class="total" id="repair-total">Rs. 0.00</div>
+                    </div>
+                    <div class="cost">
+                        <h3>Replacement Scenario</h3>
+                        <div class="input-group"><label>Purchase Price (Rs.)</label><input type="number" id="replace-price"></div>
+                        <div class="input-group"><label>Setup Cost (Rs.)</label><input type="number" id="replace-setup"></div>
+                        <div class="input-group"><label>Salvage Value (Rs.)</label><input type="number" id="replace-salvage"></div>
+                        <div class="input-group"><label>New Annual Maint (Rs.)</label><input type="number" id="replace-maint"></div>
+                        <div class="input-group"><label>New Failures/Year</label><input type="number" id="replace-failures"></div>
+                        <div class="input-group"><label>New MTTR (hrs)</label><input type="number" id="replace-mttr"></div>
+                        <div class="input-group"><label>Annual Energy (Rs.)</label><input type="number" id="replace-energy"></div>
+                        <div class="input-group"><label>Embodied Carbon (kg CO2e)</label><input type="number" id="replace-mfg-carbon" placeholder="e.g., 5000"></div>
+                        <div class="total" id="replace-total">Rs. 0.00</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="grid2" style="margin-bottom:15px;">
+                        <div class="input-group"><label>Horizon (years)</label><input type="number" id="tco-horizon" value="3"></div>
+                        <div class="input-group"><label>Discount Rate / WACC (%)</label><input type="number" id="tco-rate" value="8"></div>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn btn-primary" onclick="calculateRvR()" style="flex:1;">Run Holistic NPV & Carbon Analysis</button>
+                        <button class="btn btn-ghost" onclick="generateExecutiveReport()">📄 Generate Executive Summary Report</button>
+                    </div>
+                </div>
+
+                <div class="recommendation hidden" id="tco-recommendation-box">
+                    <h3 id="tco-rec-title" style="font-family:'Sora',sans-serif; margin-bottom:8px;"></h3>
+                    <p id="tco-rec-text" style="color:#cbd5e1; font-size:12px; line-height:1.6;"></p>
+                    <div id="tco-env-conclusion" style="margin-top:15px; padding:15px; background:rgba(34,197,94,0.05); border:1px solid rgba(34,197,94,0.2); border-radius:8px;">
+                        <h4 style="color:var(--green); font-family:'Sora',sans-serif; margin-bottom:8px; font-size:12px;">🌱 Scope 3 Carbon Impact</h4>
+                        <p id="tco-env-text" style="color:#94a3b8; font-size:11px; line-height:1.5;"></p>
+                    </div>
+                    <div class="agent-trace" id="tco-audit-trail" style="margin-top:15px;"></div>
+                </div>
+            </section>
+
+            <!-- Sustainability -->
+            <section id="sustainability" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Sustainability Intelligence</div><div class="card-sub">CARBON & WASTE MITIGATION TRACKER</div></div>
+                    <button class="btn btn-primary admin-only" onclick="openNewSustainabilityModal()">+ Add Emissions Data</button>
+                </div>
+                <div class="stats" id="sustStats"></div>
+                <div class="card">
+                    <table class="table">
+                        <thead><tr><th>ASSET</th><th>CO2e (kg/yr)</th><th>WASTE (kg/yr)</th><th>HOLISTIC RECOMMENDATION</th></tr></thead>
+                        <tbody id="sustTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- AI Agent -->
+            <section id="ai" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Agentic AI</div><div class="card-sub">HUMAN-IN-THE-LOOP · LEAST-PRIVILEGE</div></div>
+                </div>
+                <div class="card ai-card">
+                    <div class="ai-top" style="margin-bottom:15px;">
+                        <span class="ai-symbol">✦</span>
+                        <div><div class="card-title">EquipIQ Agent</div><div class="card-sub">SANDBOXED EXECUTION</div></div>
+                        <span class="ai-status">● READY</span>
+                    </div>
+                    <div class="modal-input-group">
+                        <input type="text" id="aiInput" class="modal-input" placeholder="Ask: prepare maintenance task for CNC Milling Unit...">
+                    </div>
+                    <button class="btn btn-primary" onclick="askAI()">Execute Query</button>
+                    <div id="aiResponse" style="margin-top:20px;"></div>
+                </div>
+            </section>
+
+            <!-- Inventory -->
+            <section id="inventory" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">Parts Intelligence</div><div class="card-sub">STOCK & SKU TRACKING</div></div>
+                    <button class="btn btn-primary admin-only" onclick="openNewInventoryModal()">+ Add Part</button>
+                </div>
+                <div class="stats" id="invStats"></div>
+                <div class="card">
+                    <table class="table">
+                        <thead><tr><th>NAME</th><th>SKU</th><th>EQUIPMENT</th><th>QTY</th><th>UNIT COST</th><th>STATUS</th></tr></thead>
+                        <tbody id="invTable"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Audit -->
+            <section id="audit" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">System Audit Logs</div><div class="card-sub">COMPLIANCE TRAIL</div></div>
+                </div>
+                <div class="card" id="auditLogList"></div>
+            </section>
+
+            <!-- Settings -->
+            <section id="settings" class="page">
+                <div class="card-head" style="margin-bottom:20px;">
+                    <div><div class="card-title">System Configuration</div><div class="card-sub">USER PROFILE</div></div>
+                </div>
+                <div class="card" style="max-width:500px;">
+                    <div class="modal-input-group"><label class="modal-label">Email</label><input type="email" id="settingsEmail" class="modal-input" disabled></div>
+                    <div class="modal-input-group"><label class="modal-label">Role</label><input type="text" id="settingsRole" class="modal-input" disabled></div>
+                    <button class="btn btn-ghost" style="border-color:var(--red); color:var(--red);" onclick="handleLogout()">Sign Out</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- App Modal -->
+    <div class="modal-overlay" id="appModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="modalTitle">Modal</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div class="modal-overlay" id="qrModal">
+        <div class="modal-box" style="max-width:400px;">
+            <div class="modal-header">
+                <h3>Scan QR Code</h3>
+                <button class="modal-close" onclick="closeQRModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align:center;">
+                <video id="qr-video" autoplay playsinline style="width:100%; border-radius:8px;"></video>
+                <p style="color:var(--muted); font-size:11px; margin-top:10px;">Position QR code within view</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- OCR Validation Modal -->
+    <div class="modal-overlay" id="ocr-validation-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>Verify Extracted Document Data</h3>
+                <button class="modal-close" onclick="UI.closeModal('ocr-validation-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="ocr-warnings-container" class="alert-box"></div>
+                <div class="modal-input-group">
+                    <label class="modal-label">Extracted Date</label>
+                    <input type="date" id="ocr-verify-date" class="modal-input">
+                </div>
+                <div class="modal-input-group">
+                    <label class="modal-label">Total Price</label>
+                    <input type="number" id="ocr-verify-price" class="modal-input">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-ghost" onclick="UI.closeModal('ocr-validation-modal')">Discard</button>
+                    <button class="btn btn-primary" id="commit-ocr-data">Commit as Trusted Record</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Printable Executive Report Container -->
+    <div id="printable-report" class="hidden"></div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"><span id="toastText"></span></div>
+    <div id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "EquipIQ - Sustainable Lifecycle Intelligence",
+  "short_name": "EquipIQ",
+  "description": "Finance & Sustainable Lifecycle Management Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05070d",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/npm/chart.js/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

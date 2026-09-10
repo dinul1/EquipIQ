@@ -675,7 +675,9 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeAppData(true); 
       }
       if (event.data?.type === 'SW_UPDATED') {
-        notify('App updated to latest version', 'success', 3000);
+        notify('App updated to latest version. Reloading...', 'success', 2000);
+        // Force reload to apply new cache and clear stale DOM
+        setTimeout(() => window.location.reload(), 2000);
       }
     });
   }

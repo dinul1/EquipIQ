@@ -152,18 +152,23 @@ export const LifecycleEngine = {
     for (const eq of state.globalData.equip) {
       const result = this.computeHealthScore(eq, state.globalData.maint, state.globalData.warranties);
       const delta = Math.abs((eq.health_score || 0) - result.score);
+      
+      // Auto-Determine Equipment State based on Health Score
+      let autoStatus = 'OPERATIONAL';
+      if (result.score < 40) autoStatus = 'CRITICAL';
+      else if (result.score < 75) autoStatus = 'MAINTENANCE';
+      
       eq._lifecycle = result;
+      eq.health_score = result.score;
+      eq.status = autoStatus; // Force status update locally
 
       if (delta >= 3 && !skipPersist) {
         if (navigator.onLine && dbClient) {
           try {
-            await dbClient.from('equipment').update({ health_score: result.score }).eq('id', eq.id);
+            await dbClient.from('equipment').update({ health_score: result.score, status: autoStatus }).eq('id', eq.id);
           } catch(e) {}
         }
-        eq.health_score = result.score;
         updated++;
-      } else if (delta > 0) {
-        eq.health_score = result.score;
       }
     }
     return { updated, details: [] };
@@ -740,4 +745,57 @@ export function calculateWarrantyStatus(expiryDateStr) {
   if (diffDays < 0) return 'EXPIRED';
   if (diffDays <= 30) return 'EXPIRING SOON';
   return 'ACTIVE';
+}
+
+// AI Tool: Send Email Stats
+export function sendEmailStats() {
+  if (!state.globalData) return;
+  const totalEq = state.globalData.equip.length;
+  const critical = state.globalData.equip.filter(e => e.health_score < 40).length;
+  const openWOs = state.globalData.maint.filter(m => m.status !== 'COMPLETED').length;
+  const body = `EquipIQ System Report:%0A%0A- Total Equipment: ${totalEq}%0A- Critical Assets: ${critical}%0A- Open Work Orders: ${openWOs}`;
+  
+  window.location.href = `mailto:?subject=EquipIQ%20System%20Stats&body=${body}`;
+  return JSON.stringify({ status: "success", message: "Email client opened with system stats." });
+}
+
+// Add to agentTools
+agentTools.sendEmailStats = sendEmailStats;
+
+// QR Master Properties Modal (Read-Only)
+export function openMasterPropertiesModal(id) {
+  const eq = state.globalData.equip.find(e => e.id === id);
+  if (!eq) return notify("Asset not found.");
+  
+  const maintHistory = state.globalData.maint.filter(m => m.equipment_id === id);
+  const activeWarr = state.globalData.warranties.find(w => w.equipment_id === id && calculateWarrantyStatus(w.expiry_date) !== 'EXPIRED');
+
+  UI.openModal(`Asset Profile: ${eq.name}`, `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <div>
+        <h3 style="margin:0; font-family:'Sora',sans-serif;">${eq.name}</h3>
+        <span style="color:var(--muted); font-size:12px;">${eq.asset_tag || 'N/A'} · ${eq.serial_number || 'N/A'}</span>
+      </div>
+      <span class="badge ${eq.health_score < 40 ? 'red' : eq.health_score < 75 ? 'orange' : 'green'}">${eq.health_score}% HEALTH</span>
+    </div>
+    
+    <div class="grid2" style="font-size:13px; margin-bottom:20px; grid-template-columns: 1fr 1fr;">
+      <div><strong>Status:</strong> <span class="badge ${eq.status === 'OPERATIONAL' ? 'green' : eq.status === 'MAINTENANCE' ? 'orange' : 'red'}">${eq.status}</span></div>
+      <div><strong>Category:</strong> ${eq.category || 'N/A'}</div>
+      <div><strong>Purchase Date:</strong> ${eq.purchase_date ? new Date(eq.purchase_date).toLocaleDateString() : 'N/A'}</div>
+      <div><strong>Purchase Price:</strong> Rs. ${(eq.purchase_price || 0).toLocaleString()}</div>
+      <div><strong>Warranty Status:</strong> ${activeWarr ? calculateWarrantyStatus(activeWarr.expiry_date) : 'NO ACTIVE WARRANTY'}</div>
+      <div><strong>MTTR:</strong> ${eq._lifecycle?.mttr ? eq._lifecycle.mttr.toFixed(1) + 'h' : 'N/A'}</div>
+    </div>
+    
+    <h4 style="margin-bottom:10px; border-bottom:1px solid var(--line); padding-bottom:5px;">Maintenance History</h4>
+    <div style="max-height:200px; overflow-y:auto;">
+      ${maintHistory.map(m => `
+        <div style="padding:8px 0; border-bottom:1px solid var(--line);">
+          <strong>${m.work_order_number}</strong> - ${m.type}<br>
+          <span style="color:var(--muted); font-size:12px;">${m.status} · ${m.technician || 'Unassigned'}</span>
+        </div>
+      `).join('') || '<p style="color:var(--muted);">No history found.</p>'}
+    </div>
+  `);
 }

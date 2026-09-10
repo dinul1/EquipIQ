@@ -1,7 +1,7 @@
 import { state, initSupabase, dbClient, logAudit, handleError } from './state.js';
 import { UI, notify, injectSkeleton } from './ui.js';
 import { OfflineStore } from './offline.js';
-import { LifecycleEngine, renderSustainabilityKPIs, getStandardEmbodiedCarbon, ResilientAI, agentTools, sanitizeAIResponse, openNewSustainabilityModal, loadComponentForTCO, fetchCurrentMarketPrice, calculateRvR, generateExecutiveReport, calculateWarrantyStatus } from './analytics.js';
+import { LifecycleEngine, renderSustainabilityKPIs, getStandardEmbodiedCarbon, ResilientAI, agentTools, sanitizeAIResponse, openNewSustainabilityModal, loadComponentForTCO, fetchCurrentMarketPrice, calculateRvR, generateExecutiveReport, calculateWarrantyStatus, openMasterPropertiesModal } from './analytics.js';
 import { 
   openRegisterEquipmentModal, openEditEquipmentModal, 
   openNewWorkOrderModal, openEditWorkOrderModal, 
@@ -36,6 +36,8 @@ window.approveAgentTask = approveAgentTask;
 window.approveDeletion = approveDeletion;
 window.approveUpdate = approveUpdate;
 window.approveInsert = approveInsert;
+window.openMasterPropertiesModal = openMasterPropertiesModal;
+window.closeModal = UI.closeModal;
 
 const titles = {
   dashboard: "Command Center", equipment: "Equipment Intelligence",
@@ -368,6 +370,23 @@ async function askAI() {
           }
         }
       }
+      else if (lowerQ.includes("email") && lowerQ.includes("stats")) {
+        const emailData = JSON.parse(agentTools.sendEmailStats());
+        if (emailData.status === "success") {
+          displayText = `I have generated the system stats and opened your email client to send the report. This action required explicit admin authorization.`;
+          approvalHTML = `
+            <div class="approval-box" style="border-color: var(--violet); background: rgba(124,58,237,0.05);">
+              <strong>⏸ PENDING ADMIN APPROVAL (EMAIL STATS)</strong><br>
+              <div class="approval-meta"><strong>Action:</strong> Send system stats report via email</div>
+              <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--violet);" onclick='window.approveEmailStats()'>Authorize & Confirm Email Sent</button>
+            </div>`;
+          window.approveEmailStats = () => {
+            logAudit('AI_EMAIL_APPROVED', `Admin authorized sending system stats via email.`);
+            notify("Email stats authorized and logged.", "success");
+            document.getElementById("aiResponse").innerHTML = `<h4 style="color:var(--green)">✓ EMAIL AUTHORIZED</h4><p>The system stats report has been processed.</p>`;
+          };
+        }
+      }
     }
   } catch (toolErr) {
     console.error("[Agent] Tool processing failed:", toolErr);
@@ -595,6 +614,22 @@ async function initializeAppData(silent = false) {
   } catch (error) {
     if (navigator.onLine) handleError("Data Render", error);
   }
+
+  if (silent) {
+      state.chartRenderStatus.dashboard = false;
+      state.chartRenderStatus.analytics = false;
+      const activePage = document.querySelector('.page.active')?.id;
+      // Defer chart rendering to prevent UI blocking
+      setTimeout(() => {
+        if (activePage === 'dashboard') renderDashboardCharts();
+        if (activePage === 'analytics') { MaintenanceAnalytics.renderDashboardStats(); renderAnalyticsCharts(); renderEsgChart(); }
+      }, 50);
+    } else {
+      setTimeout(() => {
+        renderDashboardCharts();
+        renderEsgChart();
+      }, 50);
+    }
 }
 window.initializeAppData = initializeAppData;
 window.askAI = askAI;
@@ -710,4 +745,17 @@ document.addEventListener('DOMContentLoaded', () => {
     Chart.defaults.font.size = 10;
     Chart.defaults.color = "#7d879b";
   }
+
+  // --- Check for QR Code direct links ---
+  const urlParams = new URLSearchParams(window.location.search);
+  const eqId = urlParams.get('id');
+  if (eqId) {
+    const checkData = setInterval(() => {
+      if (state.globalData && state.globalData.equip) {
+        clearInterval(checkData);
+        openMasterPropertiesModal(eqId);
+      }
+    }, 500);
+  }
+  
 });

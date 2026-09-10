@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EquipIQ | Sustainable CapEx & Lifecycle Intelligence</title>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>◈</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@500;600;700&family=Outfit:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
@@ -56,10 +58,8 @@
             <div class="nav-label">SYSTEM</div>
             <div class="nav" data-page="inventory"><span class="nav-icon">▣</span>Inventory</div>
             <div class="nav" data-page="audit"><span class="nav-icon">⟶</span>Audit Logs</div>
+            <div class="nav" data-page="about"><span class="nav-icon">ℹ️</span>About Designer</div>
             <div class="nav" data-page="settings"><span class="nav-icon">⚙</span>Settings</div>
-        </div>
-        <div class="sidebar-bottom">
-            <button class="btn btn-ghost w-100" onclick="openQRScanner()">📷 Scan QR</button>
         </div>
     </nav>
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
@@ -169,10 +169,12 @@
                             <div class="card-sub">LOWEST HEALTH SCORES</div>
                         </div>
                     </div>
-                    <table class="table">
-                        <thead><tr><th>EQUIPMENT</th><th>HEALTH</th><th>STATUS</th></tr></thead>
-                        <tbody id="dashCriticalTable"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th>EQUIPMENT</th><th>HEALTH</th><th>STATUS</th></tr></thead>
+                            <tbody id="dashCriticalTable"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -193,10 +195,12 @@
                 </div>
                 <div class="stats" id="maintStats"></div>
                 <div class="card">
-                    <table class="table">
-                        <thead><tr><th>WO #</th><th>EQUIPMENT</th><th>TYPE</th><th>TECH</th><th>COST</th><th>STATUS</th></tr></thead>
-                        <tbody id="maintTable"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th>WO #</th><th>EQUIPMENT</th><th>TYPE</th><th>TECH</th><th>COST</th><th>STATUS</th></tr></thead>
+                            <tbody id="maintTable"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -208,10 +212,12 @@
                 </div>
                 <div class="stats" id="warrStats"></div>
                 <div class="card">
-                    <table class="table">
-                        <thead><tr><th>EQUIPMENT</th><th>SUPPLIER</th><th>START</th><th>EXPIRY</th><th>STATUS</th></tr></thead>
-                        <tbody id="warrTable"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th>EQUIPMENT</th><th>SUPPLIER</th><th>START</th><th>EXPIRY</th><th>STATUS</th></tr></thead>
+                            <tbody id="warrTable"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -342,10 +348,12 @@
                 </div>
                 <div class="stats" id="sustStats"></div>
                 <div class="card">
-                    <table class="table">
-                        <thead><tr><th>ASSET</th><th>CO2e (kg/yr)</th><th>WASTE (kg/yr)</th><th>HOLISTIC RECOMMENDATION</th></tr></thead>
-                        <tbody id="sustTableBody"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th>ASSET</th><th>CO2e (kg/yr)</th><th>WASTE (kg/yr)</th><th>HOLISTIC RECOMMENDATION</th></tr></thead>
+                            <tbody id="sustTableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -376,10 +384,12 @@
                 </div>
                 <div class="stats" id="invStats"></div>
                 <div class="card">
-                    <table class="table">
-                        <thead><tr><th>NAME</th><th>SKU</th><th>EQUIPMENT</th><th>QTY</th><th>UNIT COST</th><th>STATUS</th></tr></thead>
-                        <tbody id="invTable"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th>NAME</th><th>SKU</th><th>EQUIPMENT</th><th>QTY</th><th>UNIT COST</th><th>STATUS</th></tr></thead>
+                            <tbody id="invTable"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -389,6 +399,19 @@
                     <div><div class="card-title">System Audit Logs</div><div class="card-sub">COMPLIANCE TRAIL</div></div>
                 </div>
                 <div class="card" id="auditLogList"></div>
+            </section>
+
+            <!-- About Designer -->
+            <section id="about" class="page">
+                <div class="card" style="max-width: 800px; margin: 0 auto; text-align: center;">
+                    <h1 style="color: var(--blue); margin-bottom: 15px; font-family: 'Sora', sans-serif;">About the Designer</h1>
+                    <p style="font-size: 18px; color: var(--muted); margin-bottom: 30px;">Designed & Developed by Dinul Vithanage</p>
+                    <p style="line-height: 1.6; margin-bottom: 30px; color: #cbd5e1;">
+                        EquipIQ is an Intelligent Lifecycle Management Platform integrating IoT, AI, and ESG metrics to optimize industrial asset performance. 
+                        Dinul specializes in building resilient, full-stack enterprise applications with a focus on offline-first architectures, AI integration, and sustainable engineering practices.
+                    </p>
+                    <a href="https://dinulvithanage.infinityfree.me" target="_blank" class="btn btn-primary" style="text-decoration:none; display:inline-block;">Visit Portfolio</a>
+                </div>
             </section>
 
             <!-- Settings -->
@@ -410,48 +433,9 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3 id="modalTitle">Modal</h3>
-                <button class="modal-close" onclick="closeModal()">&times;</button>
+                <button class="modal-close" onclick="window.UI.closeModal()">&times;</button>
             </div>
             <div class="modal-body" id="modalBody"></div>
-        </div>
-    </div>
-
-    <!-- QR Scanner Modal -->
-    <div class="modal-overlay" id="qrModal">
-        <div class="modal-box" style="max-width:400px;">
-            <div class="modal-header">
-                <h3>Scan QR Code</h3>
-                <button class="modal-close" onclick="closeQRModal()">&times;</button>
-            </div>
-            <div class="modal-body" style="text-align:center;">
-                <video id="qr-video" autoplay playsinline style="width:100%; border-radius:8px;"></video>
-                <p style="color:var(--muted); font-size:11px; margin-top:10px;">Position QR code within view</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- OCR Validation Modal -->
-    <div class="modal-overlay" id="ocr-validation-modal">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3>Verify Extracted Document Data</h3>
-                <button class="modal-close" onclick="UI.closeModal('ocr-validation-modal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="ocr-warnings-container" class="alert-box"></div>
-                <div class="modal-input-group">
-                    <label class="modal-label">Extracted Date</label>
-                    <input type="date" id="ocr-verify-date" class="modal-input">
-                </div>
-                <div class="modal-input-group">
-                    <label class="modal-label">Total Price</label>
-                    <input type="number" id="ocr-verify-price" class="modal-input">
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn-ghost" onclick="UI.closeModal('ocr-validation-modal')">Discard</button>
-                    <button class="btn btn-primary" id="commit-ocr-data">Commit as Trusted Record</button>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -462,10 +446,10 @@
     <div class="toast" id="toast"><span id="toastText"></span></div>
     <div id="toast-container"></div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- Scripts (Deferred for Speed) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script type="module" src="./js/app.js"></script>
 </body>
 </html>

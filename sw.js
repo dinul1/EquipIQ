@@ -1,19 +1,26 @@
 // =========================================================
-// EquipIQ Service Worker v2.2 — Conflict Aware & Patched Sync
+// EquipIQ Service Worker v3.0.0 — Updatable Cache & DB Cache
 // =========================================================
 
-const SW_VERSION   = 'equipiq-v2.2.0';
+const SW_VERSION = 'equipiq-v3.0.0';
 const STATIC_CACHE = `${SW_VERSION}-static`;
-const RUNTIME_CACHE= `${SW_VERSION}-runtime`;
-const API_CACHE    = `${SW_VERSION}-api`;
-const DB_NAME      = 'EquipIQOfflineDB';
-const DB_VERSION   = 2;
+const RUNTIME_CACHE = `${SW_VERSION}-runtime`;
+const API_CACHE = `${SW_VERSION}-api`;
+const DB_NAME = 'EquipIQOfflineDB';
+const DB_VERSION = 2;
 
+// Core assets required for the app shell to load offline
 const CORE_ASSETS = [
   '/',
   '/index.html',
   '/styles.css',
-  '/app.js',
+  '/js/app.js',
+  '/js/state.js',
+  '/js/ui.js',
+  '/js/offline.js',
+  '/js/analytics.js',
+  '/js/crud.js',
+  '/js/ocr.js',
   '/manifest.json'
 ];
 
@@ -31,7 +38,7 @@ self.addEventListener('install', (event) => {
       .then(cache => cache.addAll(CORE_ASSETS).catch(err => {
         console.warn('[SW] Some core assets failed to cache:', err);
       }))
-      .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting()) // Force activation immediately
   );
 });
 
@@ -40,11 +47,12 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then(keys => Promise.all(
         keys
-          .filter(key => !key.startsWith(SW_VERSION))
+          .filter(key => !key.startsWith(SW_VERSION)) // Delete ANY cache not matching current version
           .map(key => caches.delete(key))
       ))
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()) // Take control of all open clients
       .then(() => {
+        // Tell the UI to reload so it uses the new cached assets
         return self.clients.matchAll().then(clients => {
           clients.forEach(c => c.postMessage({ type: 'SW_UPDATED', version: SW_VERSION }));
         });
@@ -80,11 +88,12 @@ async function refreshAllCaches() {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  const url  = new URL(req.url);
+  const url = new URL(req.url);
 
   if (!url.protocol.startsWith('http')) return;
   if (req.headers.get('upgrade') === 'websocket') return;
 
+  // 1. Handle Mutations (POST, PATCH, DELETE) - Queue if offline
   if (req.method !== 'GET') {
     if (SUPABASE_PATTERN.test(url.hostname)) {
       event.respondWith(handleMutation(req));
@@ -92,33 +101,41 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Ignore Supabase Auth calls
   if (SUPABASE_PATTERN.test(url.hostname) && url.pathname.includes('/auth/v1/')) return;
 
+  // 2. Handle Supabase Database GET requests (The DB Cache)
   if (SUPABASE_PATTERN.test(url.hostname) && url.pathname.includes('/rest/v1/')) {
     event.respondWith(handleApiGet(req));
     return;
   }
 
+  // 3. Handle Supabase Edge Functions (Never cache, let app handle fallback)
   if (SUPABASE_PATTERN.test(url.hostname) && url.pathname.includes('/functions/v1/')) {
     event.respondWith(handleEdgeFunction(req));
     return;
   }
 
+  // 4. Handle CDN assets (Chart.js, Supabase Client, Tesseract)
   if (CDN_PATTERNS.some(p => p.test(url.hostname))) {
-    event.respondWith(cacheFirstRevalidate(req));
+    event.respondWith(staleWhileRevalidate(req));
     return;
   }
 
+  // 5. Handle App Navigations
   if (req.mode === 'navigate') {
     event.respondWith(networkFirstNavigation(req));
     return;
   }
 
+  // 6. Handle Local Static Assets
   if (url.origin === self.location.origin) {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
 });
+
+// --- Caching Strategies ---
 
 async function staleWhileRevalidate(req) {
   const cache = await caches.open(RUNTIME_CACHE);
@@ -135,36 +152,13 @@ async function staleWhileRevalidate(req) {
 
   if (cached) {
     networkPromise.catch(()=>{});
-    return cached;
+    return cached; // Return cached immediately, update in background
   }
 
   const networkRes = await networkPromise;
   if (networkRes) return networkRes;
 
   return caches.match('/index.html');
-}
-
-async function cacheFirstRevalidate(req) {
-  const cache = await caches.open(RUNTIME_CACHE);
-  const cached = await cache.match(req);
-
-  fetch(req).then(res => {
-    if (res && (res.ok || res.type === 'opaque')) {
-      cache.put(req, res.clone()).catch(()=>{});
-    }
-  }).catch(()=>{});
-
-  if (cached) return cached;
-
-  try {
-    const res = await fetch(req);
-    if (res && (res.ok || res.type === 'opaque')) {
-      cache.put(req, res.clone()).catch(()=>{});
-    }
-    return res;
-  } catch(e) {
-    return new Response('', { status: 504 });
-  }
 }
 
 async function networkFirstNavigation(req) {
@@ -191,15 +185,17 @@ async function handleApiGet(req) {
   try {
     const res = await fetch(req);
     if (res && res.ok) {
-      cache.put(req, res.clone()).catch(()=>{});
+      cache.put(req, res.clone()).catch(()=>{}); // Save DB JSON to cache
     }
     return res;
   } catch(e) {
+    // OFFLINE FALLBACK: Return cached DB JSON so graphs/tables render
     if (cached) {
       const headers = new Headers(cached.headers);
       headers.set('X-EquipIQ-Source', 'offline-cache');
       return new Response(await cached.blob(), { status: 200, headers });
     }
+    // If no cache, return empty array to prevent UI crashes
     return new Response(JSON.stringify([]), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -220,6 +216,8 @@ async function handleEdgeFunction(req) {
     });
   }
 }
+
+// --- Offline Mutations Queue (Background Sync) ---
 
 async function handleMutation(req) {
   try {
@@ -365,7 +363,6 @@ async function flushQueue() {
             delTx.objectStore('mutations').delete(keys[i]);
             successCount++;
           } else if (res.status === 409) {
-            // Conflict detected
             conflictDetected = true;
             const delTx = db.transaction('mutations', 'readwrite');
             delTx.objectStore('mutations').delete(keys[i]); // Drop conflicting mutation

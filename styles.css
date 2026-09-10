@@ -206,6 +206,7 @@ body::before {
 .table th { text-align:left; color:var(--muted); font-size:9px; letter-spacing:1px; padding:10px; border-bottom:1px solid var(--line); font-weight:600; text-transform:uppercase; }
 .table td { padding:12px 10px; border-bottom:1px solid var(--line); color:#cbd5e1; transition:background 0.2s; }
 .table tr:hover td { background:rgba(255,255,255,0.02); }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch;}
 .equipment { display:flex; align-items:center; gap:10px; }
 .equip-icon { width:30px; height:30px; background:var(--surface2); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--blue); }
 .clickable-row { cursor:pointer; }
@@ -350,9 +351,10 @@ textarea.modal-input { resize: vertical; min-height: 60px; font-family: 'Outfit'
     .table th, .table td {
         padding: 8px 6px;
     }
+    
 }
 
-/* Executive Report Print Styles */
+/* Report Print Styles */
 #printable-report { display: none; }
 
 @media print {

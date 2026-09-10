@@ -32,6 +32,7 @@ export async function deleteRecord(table, id) {
 }
 
 // --- Equipment CRUD ---
+
 export function openRegisterEquipmentModal() {
   if (state.currentUser.role !== 'admin') return notify("Access Denied.");
   UI.openModal("Register New Asset", `
@@ -39,13 +40,8 @@ export function openRegisterEquipmentModal() {
     <div class="modal-input-group"><label class="modal-label">Category</label><input type="text" id="reg_eq_category" class="modal-input" placeholder="e.g. Motor, Pump, CNC"></div>
     <div class="modal-input-group"><label class="modal-label">Model</label><input type="text" id="reg_eq_model" class="modal-input" placeholder="Model Series X"></div>
     <div class="modal-input-group"><label class="modal-label">Serial Number</label><input type="text" id="reg_eq_serial" class="modal-input" placeholder="SN-882"></div>
-    <div class="modal-input-group"><label class="modal-label">Status</label><select id="reg_eq_status" class="modal-input"><option value="OPERATIONAL">OPERATIONAL</option><option value="MAINTENANCE">MAINTENANCE</option><option value="CRITICAL">CRITICAL</option></select></div>
     <div class="modal-input-group"><label class="modal-label">Purchase Price (Rs)</label><input type="number" id="reg_eq_price" class="modal-input" value="0"></div>
     <div class="modal-input-group"><label class="modal-label">Purchase Date</label><input type="date" id="reg_eq_date" class="modal-input"></div>
-    
-    <h4 style="font-family:'Sora',sans-serif; margin:15px 0 10px; font-size:12px;">ESG Data</h4>
-    <div class="modal-input-group"><label class="modal-label">Annual Emissions (kg CO2e)</label><input type="number" id="reg_eq_emissions" class="modal-input" value="0"></div>
-    <div class="modal-input-group"><label class="modal-label">Annual Waste (kg)</label><input type="number" id="reg_eq_waste" class="modal-input" value="0"></div>
     
     <div class="modal-actions"><button class="btn btn-primary" onclick="window.createEquipment()">Save Asset</button></div>
   `);
@@ -59,12 +55,12 @@ async function createEquipment() {
     category: document.getElementById('reg_eq_category').value,
     model: document.getElementById('reg_eq_model').value,
     serial_number: document.getElementById('reg_eq_serial').value,
-    status: document.getElementById('reg_eq_status').value,
-    health_score: 100,
+    status: 'OPERATIONAL', // Default, auto-updated by lifecycle engine
+    health_score: 100, // Default, auto-updated
     purchase_price: parseFloat(document.getElementById('reg_eq_price').value) || 0,
     purchase_date: document.getElementById('reg_eq_date').value || null,
-    annual_emissions: parseFloat(document.getElementById('reg_eq_emissions').value) || 0,
-    annual_waste: parseFloat(document.getElementById('reg_eq_waste').value) || 0
+    annual_emissions: 0,
+    annual_waste: 0
   };
   if (!payload.name) return notify("Asset Name is required.");
   const { error } = await dbClient.from('equipment').insert([payload]);
@@ -72,7 +68,6 @@ async function createEquipment() {
   
   if (!navigator.onLine) {
     payload.id = 'temp-' + Date.now();
-    if (!state.globalData) state.globalData = { equip: [], maint: [], warranties: [], inventory: [], logs: [] };
     state.globalData.equip.push(payload);
   }
 
@@ -86,36 +81,127 @@ export function openEditEquipmentModal(id) {
   if (state.currentUser.role !== 'admin') return notify("Access Denied.");
   const eq = state.globalData.equip.find(e => e.id === id);
   if (!eq) return;
+  
+  const qrUrl = `${window.location.origin}${window.location.pathname}?id=${eq.id}`;
+  
   UI.openModal("Edit Equipment", `
     <div class="modal-input-group"><label class="modal-label">Name *</label><input type="text" id="edit_eq_name" class="modal-input" value="${eq.name}"></div>
-    <div class="modal-input-group"><label class="modal-label">Asset Tag</label><input type="text" class="modal-input" value="${eq.asset_tag || ''}" disabled></div>
     <div class="modal-input-group"><label class="modal-label">Category</label><input type="text" id="edit_eq_category" class="modal-input" value="${eq.category || ''}"></div>
     <div class="modal-input-group"><label class="modal-label">Serial Number</label><input type="text" id="edit_eq_serial" class="modal-input" value="${eq.serial_number || ''}"></div>
-    <div class="modal-input-group"><label class="modal-label">Status</label><select id="edit_eq_status" class="modal-input"><option value="OPERATIONAL" ${eq.status==='OPERATIONAL'?'selected':''}>OPERATIONAL</option><option value="MAINTENANCE" ${eq.status==='MAINTENANCE'?'selected':''}>MAINTENANCE</option><option value="CRITICAL" ${eq.status==='CRITICAL'?'selected':''}>CRITICAL</option></select></div>
-    <div class="modal-input-group"><label class="modal-label">Health Score (0-100)</label><input type="number" id="edit_eq_health" class="modal-input" value="${eq.health_score}"></div>
+    
+    <div class="modal-input-group">
+      <label class="modal-label">Lifecycle Health (Auto-generated)</label>
+      <input type="text" class="modal-input" value="${eq.health_score}%" disabled>
+    </div>
+    <div class="modal-input-group">
+      <label class="modal-label">Equipment State (Auto-generated)</label>
+      <input type="text" class="modal-input" value="${eq.status}" disabled>
+    </div>
+    
     <div class="modal-input-group"><label class="modal-label">Purchase Price (Rs)</label><input type="number" id="edit_eq_price" class="modal-input" value="${eq.purchase_price || 0}"></div>
     <div class="modal-input-group"><label class="modal-label">Purchase Date</label><input type="date" id="edit_eq_date" class="modal-input" value="${eq.purchase_date || ''}"></div>
     
-    <h4 style="font-family:'Sora',sans-serif; margin:15px 0 10px; font-size:12px;">ESG Data</h4>
-    <div class="modal-input-group"><label class="modal-label">Annual Emissions (kg CO2e)</label><input type="number" id="edit_eq_emissions" class="modal-input" value="${eq.annual_emissions || 0}"></div>
-    <div class="modal-input-group"><label class="modal-label">Annual Waste (kg)</label><input type="number" id="edit_eq_waste" class="modal-input" value="${eq.annual_waste || 0}"></div>
+    <h4 style="font-family:'Sora',sans-serif; margin:15px 0 10px; font-size:12px;">Asset QR Code</h4>
+    <div style="text-align:center; margin-bottom:15px;">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrUrl)}" alt="QR Code" style="margin-bottom:10px; background:white; padding:5px; border-radius:4px;">
+      <br>
+      <button class="btn btn-ghost" onclick="window.openQrModal('${eq.id}')">View & Print QR</button>
+    </div>
     
-    <div class="modal-actions"><button class="btn btn-primary" onclick="window.updateEquipment('${id}')">Save Changes</button><button class="btn btn-ghost" style="border-color:var(--red); color:var(--red);" onclick="window.deleteRecord('equipment', '${id}')">Delete</button></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="window.updateEquipment('${id}')">Save Changes</button>
+      <button class="btn btn-ghost" style="border-color:var(--red); color:var(--red);" onclick="window.deleteRecord('equipment', '${id}')">Delete</button>
+    </div>
   `);
   window.updateEquipment = updateEquipment;
+  window.openQrModal = openQrModal;
 }
+
+export function openQrModal(id) {
+  const eq = state.globalData.equip.find(e => e.id === id);
+  if (!eq) return;
+  const qrUrl = `${window.location.origin}${window.location.pathname}?id=${eq.id}`;
+  
+  UI.openModal(`QR Code: ${eq.name}`, `
+    <div style="text-align:center;">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrUrl)}" alt="QR Code" style="background:white; padding:10px; border-radius:8px; margin-bottom:20px;">
+      <p style="color:var(--muted); margin-bottom:20px;">Scan this code to instantly view the master properties for ${eq.name}.</p>
+      <button class="btn btn-primary" onclick="window.printQR('${id}')">Print QR Sticker</button>
+    </div>
+  `);
+}
+
+window.printQR = (id) => {
+  const eq = state.globalData.equip.find(e => e.id === id);
+  if (!eq) return;
+  const qrUrl = `${window.location.origin}${window.location.pathname}?id=${eq.id}`;
+  const printWindow = window.open('', '_blank');
+  
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Print QR - ${eq.name}</title>
+        <style>
+          /* Removes browser default headers/footers (URL, Date, Page #) */
+          @page { 
+            size: auto; 
+            margin: 0; 
+          }
+          html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+          }
+          body { 
+            padding: 40px; 
+            text-align: center; 
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+          }
+          h2 { margin: 0 0 10px 0; color: #000; font-size: 24px; }
+          p { margin: 5px 0; color: #333; font-size: 14px; }
+          img { 
+            margin: 25px 0; 
+            width: 300px; 
+            height: 300px;
+          }
+        </style>
+      </head>
+      <body>
+        <h2>${eq.name}</h2>
+        <p>Asset Tag: ${eq.asset_tag || 'N/A'}</p>
+        <img id="qr-image" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}" alt="QR Code" />
+        <p style="font-size: 12px; color: #666;">EquipIQ Asset Tracking System</p>
+
+        <script>
+          // Wait for the image to load before printing
+          window.onload = function() {
+            window.focus();
+            window.print();
+            // Close the window after a slight delay to let the print dialog finish
+            setTimeout(function() {
+              window.close();
+            }, 200);
+          };
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
 
 async function updateEquipment(id) {
   const payload = {
     name: document.getElementById('edit_eq_name').value,
     category: document.getElementById('edit_eq_category').value,
     serial_number: document.getElementById('edit_eq_serial').value,
-    status: document.getElementById('edit_eq_status').value,
-    health_score: parseInt(document.getElementById('edit_eq_health').value),
+    // Status and health_score are omitted; controlled by LifecycleEngine
     purchase_price: parseFloat(document.getElementById('edit_eq_price').value) || 0,
-    purchase_date: document.getElementById('edit_eq_date').value || null,
-    annual_emissions: parseFloat(document.getElementById('edit_eq_emissions').value) || 0,
-    annual_waste: parseFloat(document.getElementById('edit_eq_waste').value) || 0
+    purchase_date: document.getElementById('edit_eq_date').value || null
   };
   const { error } = await dbClient.from('equipment').update(payload).eq('id', id);
   if (error) return handleError("Database", error);
@@ -130,7 +216,7 @@ async function updateEquipment(id) {
   UI.closeModal();
   await window.initializeAppData(true);
 }
-
+    
 // --- Work Order CRUD ---
 export function openNewWorkOrderModal() {
   if (state.currentUser.role !== 'admin') return notify("Access Denied.");

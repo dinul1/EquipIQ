@@ -1,4 +1,4 @@
-```markdown
+
 # ◈ EquipIQ | Sustainable CapEx & Lifecycle Intelligence
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6%20Modules-F7DF1E?logo=javascript&logoColor=black)
@@ -207,4 +207,3 @@ This project is licensed under the MIT License.
 *EquipIQ is an Intelligent Lifecycle Management Platform integrating IoT, AI, and ESG metrics to optimize industrial asset performance. Dinul specializes in building resilient, full-stack enterprise applications with a focus on offline-first architectures, AI integration, and sustainable engineering practices.*
 
 🌐 **Portfolio:** [dinulvithanage.infinityfree.me](https://dinulvithanage.infinityfree.me)
-```

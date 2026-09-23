@@ -1,3 +1,4 @@
+// js/app.js
 import { state, initSupabase, dbClient, logAudit, handleError } from './state.js';
 import { UI, notify, injectSkeleton } from './ui.js';
 import { OfflineStore } from './offline.js';
@@ -9,35 +10,8 @@ import {
   openNewInventoryModal, openEditInventoryModal,
   deleteRecord, approveAgentTask, approveDeletion, approveUpdate, approveInsert
 } from './crud.js';
-import { processRealOCR, confirmOCR, openQRScanner, closeQRModal } from './ocr.js';
-
-// Expose UI and Modals to global window for HTML onclick attributes
-window.UI = UI;
-window.notify = notify;
-window.openRegisterEquipmentModal = openRegisterEquipmentModal;
-window.openEditEquipmentModal = openEditEquipmentModal;
-window.openNewWorkOrderModal = openNewWorkOrderModal;
-window.openEditWorkOrderModal = openEditWorkOrderModal;
-window.openNewWarrantyModal = openNewWarrantyModal;
-window.openEditWarrantyModal = openEditWarrantyModal;
-window.openNewInventoryModal = openNewInventoryModal;
-window.openEditInventoryModal = openEditInventoryModal;
-window.openNewSustainabilityModal = openNewSustainabilityModal;
-window.deleteRecord = deleteRecord;
-window.loadComponentForTCO = loadComponentForTCO;
-window.fetchCurrentMarketPrice = fetchCurrentMarketPrice;
-window.calculateRvR = calculateRvR;
-window.generateExecutiveReport = generateExecutiveReport;
-window.processRealOCR = processRealOCR;
-window.confirmOCR = confirmOCR;
-window.openQRScanner = openQRScanner;
-window.closeQRModal = closeQRModal;
-window.approveAgentTask = approveAgentTask;
-window.approveDeletion = approveDeletion;
-window.approveUpdate = approveUpdate;
-window.approveInsert = approveInsert;
-window.openMasterPropertiesModal = openMasterPropertiesModal;
-window.closeModal = UI.closeModal;
+import { processRealOCR, confirmOCR, initDragAndDrop } from './ocr.js';
+import { initRouter } from './router.js';
 
 const titles = {
   dashboard: "Command Center", equipment: "Equipment Intelligence",
@@ -45,7 +19,7 @@ const titles = {
   documents: "Document Intelligence", analytics: "Lifecycle Analytics",
   decision: "Repair vs Replacement", sustainability: "Sustainability Intelligence",
   ai: "AI Intelligence", inventory: "Parts Intelligence", 
-  audit: "System Audit Logs", settings: "System Configuration"
+  audit: "System Audit Logs", settings: "System Configuration", about: "About Designer"
 };
 
 const DataLayer = {
@@ -73,8 +47,7 @@ async function checkSession() {
 }
 
 async function fetchUserProfile(authUser) {
-  const { data: profile, error } = await dbClient
-    .from('profiles').select('role, email').eq('id', authUser.id).single();
+  const { data: profile, error } = await dbClient.from('profiles').select('role, email').eq('id', authUser.id).single();
   if (error || !profile) return notify("Error fetching user profile.");
   state.currentUser = { id: authUser.id, email: profile.email, role: profile.role };
   enterApp();
@@ -88,10 +61,25 @@ function continueAsGuest() {
 function enterApp() {
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('userAvatar').innerText = state.currentUser.email[0].toUpperCase();
-  if (state.currentUser.role === 'viewer') document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+  
+  // RBAC Logic
+  if (state.currentUser.role === 'viewer') {
+    document.querySelectorAll('.admin-only, .tech-only').forEach(el => el.style.display = 'none');
+  } else if (state.currentUser.role === 'technician') {
+    document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+    document.querySelector('[data-page="decision"]').style.display = 'none';
+    document.querySelector('[data-page="sustainability"]').style.display = 'none';
+  }
+  
   document.getElementById('settingsEmail').value = state.currentUser.email;
   document.getElementById('settingsRole').value = state.currentUser.role.toUpperCase();
   logAudit('USER_LOGIN', `${state.currentUser.email} logged in as ${state.currentUser.role}`);
+  
+  // Request Web Push Permissions
+  if ('Notification' in window && state.currentUser.role === 'admin') {
+    Notification.requestPermission();
+  }
+  
   initializeAppData();
   initRealtimeSubscriptions();
 }
@@ -101,9 +89,14 @@ async function handleLogin() {
   const pass = document.getElementById('loginPass').value;
   if (!email || !pass) return notify("Please enter credentials");
   notify("Authenticating...");
-  const { data, error } = await dbClient.auth.signInWithPassword({ email, password: pass });
-  if (error) notify("Authentication failed: " + error.message);
-  else if (data.user) await fetchUserProfile(data.user);
+  try {
+    const { data, error } = await dbClient.auth.signInWithPassword({ email, password: pass });
+    if (error) return notify("Authentication failed: " + error.message);
+    if (data.user) await fetchUserProfile(data.user);
+  } catch (err) {
+    console.error("Login Network Error:", err);
+    notify("Network Error: Cannot reach authentication server. You may be offline. Try 'Continue as Guest'.", 'error', 5000);
+  }
 }
 
 async function handleLogout() {
@@ -143,10 +136,8 @@ const MaintenanceAnalytics = {
     if (!state.globalData) return;
     const compMaint = state.globalData.maint?.filter(m => m.status === 'COMPLETED') || [];
     const failures = state.globalData.maint?.filter(m => m.type === 'CORRECTIVE') || [];
-
     const mttr = this.calculateMTTR(compMaint.map(m => m.mttr_hours));
     document.getElementById('stat-mttr').textContent = mttr;
-
     if (failures.length > 0) {
       const earliest = new Date(Math.min(...failures.map(m => new Date(m.due_date || m.created_at).getTime())));
       const days = (Date.now() - earliest) / 86400000;
@@ -155,7 +146,6 @@ const MaintenanceAnalytics = {
     } else {
       document.getElementById('stat-mtbf').textContent = 'N/A';
     }
-
     const totalMaint = state.globalData.maint?.length || 0;
     const compliance = totalMaint > 0 ? ((compMaint.length / totalMaint) * 100).toFixed(1) : 0;
     document.getElementById('stat-compliance').textContent = compliance;
@@ -234,11 +224,9 @@ function renderEsgChart() {
   if (!state.globalData) return;
   const ctx = document.getElementById('esgChart');
   if (!ctx) return;
-
   const labels = getMonthLabels();
   const esgData = new Array(6).fill(0);
   const today = new Date();
-
   state.globalData.maint.forEach(m => {
     if (m.status === 'COMPLETED' && m.type === 'CORRECTIVE') {
       const mDate = new Date(m.due_date);
@@ -251,26 +239,50 @@ function renderEsgChart() {
       }
     }
   });
-
   if (window.myEsgChart) window.myEsgChart.destroy();
   window.myEsgChart = new Chart(ctx, {
     type: "bar",
-    data: { 
-      labels, 
-      datasets: [{ 
-        label: "CO2e Saved (kg)", 
-        data: esgData, 
-        backgroundColor: "rgba(34,197,94,.55)", 
-        borderColor: "#22c55e",
-        borderWidth: 1
-      }] 
-    },
-    options: { 
-      responsive: true, 
-      maintainAspectRatio: false, 
-      plugins: { legend: { display: false } } 
-    }
+    data: { labels, datasets: [{ label: "CO2e Saved (kg)", data: esgData, backgroundColor: "rgba(34,197,94,.55)", borderColor: "#22c55e", borderWidth: 1 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
   });
+}
+
+let currentPage = 1;
+const itemsPerPage = 50;
+
+function loadMoreMaint() {
+  currentPage++;
+  renderMaintenanceTable(state.globalData.maint);
+}
+
+function renderMaintenanceTable(data) {
+  const tbody = document.getElementById('maintTable');
+  const paginatedData = data.slice(0, currentPage * itemsPerPage);
+  
+  tbody.innerHTML = paginatedData.map(m => {
+    const isOverdue = m.status !== 'COMPLETED' && m.due_date && (() => {
+      const d = new Date(m.due_date);
+      if (!isNaN(d)) d.setHours(23, 59, 59);
+      return d < new Date();
+    })();
+    return `
+    <tr class="clickable-row" data-action="edit-wo" data-id="${m.id}">
+      <td>${m.work_order_number || 'WO-SYS'}</td>
+      <td>${m.equipment ? m.equipment.name : 'Unknown Asset'}</td>
+      <td><span class="badge ${m.type === 'PREVENTIVE' ? 'blue' : 'red'}">${m.type}</span></td>
+      <td>${m.technician || 'Unassigned'}</td>
+      <td>Rs. ${(m.cost || 0).toLocaleString()}</td>
+      <td>
+        <span class="badge ${m.status === 'PENDING' ? 'orange' : m.status === 'IN PROGRESS' ? 'blue' : 'green'}">${m.status}</span>
+        ${isOverdue ? '<span class="badge red" style="margin-left:5px;">OVERDUE</span>' : ''}
+      </td>
+      <td><button class="btn btn-ghost" data-action="export-wo-pdf" data-id="${m.id}">PDF</button></td>
+    </tr>`;
+  }).join('');
+  
+  if (data.length > paginatedData.length) {
+    tbody.innerHTML += `<tr><td colspan="7" style="text-align:center;"><button class="btn btn-ghost" data-action="load-more-maint">Load More (${data.length - paginatedData.length} remaining)</button></td></tr>`;
+  }
 }
 
 async function askAI() {
@@ -285,7 +297,6 @@ async function askAI() {
   const aiResult = await ResilientAI.invoke(q);
   let displayText = aiResult.text;
   let isAIError = aiResult.source === 'fallback' || aiResult.source === 'offline';
-
   let approvalHTML = "";
   const lowerQ = q.toLowerCase();
   
@@ -300,27 +311,41 @@ async function askAI() {
     if (woMatch && closeKeywords.some(kw => lowerQ.includes(kw))) {
       const closeData = JSON.parse(agentTools.closeWorkOrder(woMatch.work_order_number));
       if (closeData.update_payload) {
+        state.pendingUpdate = closeData.update_payload;
         displayText = `I have identified a request to close Work Order ${woMatch.work_order_number}. This action requires explicit admin authorization.`;
         approvalHTML = `
           <div class="approval-box" style="border-color: var(--green); background: rgba(34,197,94,0.05);">
             <strong>⏸ PENDING ADMIN APPROVAL (CLOSE WO)</strong><br>
             <div class="approval-meta"><strong>WO:</strong> ${woMatch.work_order_number}</div>
-            <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--green);" onclick='window.approveUpdate(${JSON.stringify(closeData.update_payload)})'>Authorize & Close Work Order</button>
+            <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--green);" data-action="approve-update">Authorize & Close Work Order</button>
           </div>`;
       }
     } 
+    else if (lowerQ.includes("email") && lowerQ.includes("stats")) {
+      const emailData = JSON.parse(agentTools.sendEmailStats());
+      if (emailData.status === "success") {
+        displayText = `I have generated the system stats and opened your email client to send the report. This action required explicit admin authorization.`;
+        approvalHTML = `
+          <div class="approval-box" style="border-color: var(--violet); background: rgba(124,58,237,0.05);">
+            <strong>⏸ PENDING ADMIN APPROVAL (EMAIL STATS)</strong><br>
+            <div class="approval-meta"><strong>Action:</strong> Send system stats report via email</div>
+            <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--violet);" data-action="approve-email">Authorize & Confirm Email Sent</button>
+          </div>`;
+      }
+    }
     else if (lowerQ.includes("add") && lowerQ.includes("part")) {
       const partName = q.replace(/.*add part (for|named|called)?\s*/i, '').replace(/.*add\s*/i, '').trim() || "New AI Part";
       const qtyMatch = q.match(/\d+/);
       const qty = qtyMatch ? qtyMatch[0] : 1;
       const invData = JSON.parse(agentTools.createInventoryPart(partName, qty));
       if (invData.insert_payload) {
+        state.pendingInsert = invData.insert_payload;
         displayText = `I have prepared the inventory payload for '${partName}'. This action requires explicit admin authorization.`;
         approvalHTML = `
           <div class="approval-box">
             <strong>⏸ PENDING ADMIN APPROVAL (ADD PART)</strong><br>
             <div class="approval-meta"><strong>Part:</strong> ${partName} | <strong>Qty:</strong> ${qty}</div>
-            <button class="btn btn-primary" style="margin-top:10px; width:100%;" onclick='window.approveInsert(${JSON.stringify(invData.insert_payload)})'>Authorize & Add Part</button>
+            <button class="btn btn-primary" style="margin-top:10px; width:100%;" data-action="approve-insert">Authorize & Add Part</button>
           </div>`;
       }
     }
@@ -329,12 +354,13 @@ async function askAI() {
       if (eqMatch && deleteKeywords.some(kw => lowerQ.includes(kw))) {
         const delData = JSON.parse(agentTools.deleteEquipment(eqMatch.name));
         if (delData.delete_payload) {
+          state.pendingDelete = delData.delete_payload;
           displayText = `I have identified a request to delete ${eqMatch.name}. This destructive action requires explicit admin authorization.`;
           approvalHTML = `
             <div class="approval-box" style="border-color: var(--red); background: rgba(239,68,68,0.05);">
               <strong>⏸ PENDING ADMIN APPROVAL (DELETION)</strong><br>
               <div class="approval-meta"><strong>Asset:</strong> ${delData.delete_payload.name}</div>
-              <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--red);" onclick='window.approveDeletion(${JSON.stringify(delData.delete_payload)})'>Authorize & Delete Equipment</button>
+              <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--red);" data-action="approve-delete">Authorize & Delete Equipment</button>
             </div>`;
         }
       } 
@@ -343,12 +369,13 @@ async function askAI() {
         const newHealth = healthMatch ? healthMatch[0] : 50;
         const updateData = JSON.parse(agentTools.updateEquipmentHealth(eqMatch.name, newHealth));
         if (updateData.update_payload) {
+          state.pendingUpdate = updateData.update_payload;
           displayText = `I have prepared a health update for ${eqMatch.name} to ${newHealth}%. This action requires explicit admin authorization.`;
           approvalHTML = `
             <div class="approval-box" style="border-color: var(--orange); background: rgba(245,158,11,0.05);">
               <strong>⏸ PENDING ADMIN APPROVAL (UPDATE)</strong><br>
               <div class="approval-meta"><strong>Asset:</strong> ${eqMatch.name} | <strong>New Health:</strong> ${newHealth}%</div>
-              <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--orange);" onclick='window.approveUpdate(${JSON.stringify(updateData.update_payload)})'>Authorize & Update Health</button>
+              <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--orange);" data-action="approve-update">Authorize & Update Health</button>
             </div>`;
         }
       }
@@ -357,6 +384,7 @@ async function askAI() {
         if (maintKeywords.some(kw => lowerQ.includes(kw))) {
           const taskData = JSON.parse(agentTools.prepareMaintenanceTask(eqMatch.name));
           if (taskData.task) {
+            state.pendingTask = taskData.task;
             approvalHTML = `
               <div class="approval-box">
                 <strong>⏸ PENDING ADMIN APPROVAL</strong><br>
@@ -365,26 +393,9 @@ async function askAI() {
                   <strong>Type:</strong> ${taskData.task.type} | 
                   <strong>Due:</strong> ${taskData.task.due_date}
                 </div>
-                <button class="btn btn-primary" style="margin-top:10px; width:100%;" onclick='window.approveAgentTask(${JSON.stringify(taskData.task)})'>Authorize & Commit Work Order</button>
+                <button class="btn btn-primary" style="margin-top:10px; width:100%;" data-action="approve-task">Authorize & Commit Work Order</button>
               </div>`;
           }
-        }
-      }
-      else if (lowerQ.includes("email") && lowerQ.includes("stats")) {
-        const emailData = JSON.parse(agentTools.sendEmailStats());
-        if (emailData.status === "success") {
-          displayText = `I have generated the system stats and opened your email client to send the report. This action required explicit admin authorization.`;
-          approvalHTML = `
-            <div class="approval-box" style="border-color: var(--violet); background: rgba(124,58,237,0.05);">
-              <strong>⏸ PENDING ADMIN APPROVAL (EMAIL STATS)</strong><br>
-              <div class="approval-meta"><strong>Action:</strong> Send system stats report via email</div>
-              <button class="btn btn-primary" style="margin-top:10px; width:100%; background: var(--violet);" onclick='window.approveEmailStats()'>Authorize & Confirm Email Sent</button>
-            </div>`;
-          window.approveEmailStats = () => {
-            logAudit('AI_EMAIL_APPROVED', `Admin authorized sending system stats via email.`);
-            notify("Email stats authorized and logged.", "success");
-            document.getElementById("aiResponse").innerHTML = `<h4 style="color:var(--green)">✓ EMAIL AUTHORIZED</h4><p>The system stats report has been processed.</p>`;
-          };
         }
       }
     }
@@ -411,6 +422,12 @@ async function askAI() {
   `;
 }
 
+function approveEmailStats() {
+  logAudit('AI_EMAIL_APPROVED', `Admin authorized sending system stats via email.`);
+  notify("Email stats authorized and logged.", "success");
+  document.getElementById("aiResponse").innerHTML = `<h4 style="color:var(--green)">✓ EMAIL AUTHORIZED</h4><p>The system stats report has been processed.</p>`;
+}
+
 async function updatePendingSyncBadge() {
   const count = await OfflineStore.countPendingMutations();
   const badge = document.getElementById('pending-sync-badge');
@@ -419,18 +436,38 @@ async function updatePendingSyncBadge() {
   }
 }
 
+async function filterAudit() {
+  const start = document.getElementById('audit-start-date').value;
+  const end = document.getElementById('audit-end-date').value;
+  if (!start || !end) return notify('Please select both dates');
+  
+  const { data, error } = await dbClient.from('audit_logs')
+    .select('*')
+    .gte('created_at', start)
+    .lte('created_at', end + ' 23:59:59')
+    .order('created_at', { ascending: false });
+  
+  if (error) return handleError('Audit', error);
+  state.globalData.logs = data;
+  renderAuditLogs(data);
+}
+
+function renderAuditLogs(logs) {
+  document.getElementById('auditLogList').innerHTML = logs.map(l => `
+    <div class="audit-item"><strong>${l.action}</strong> - ${l.details}<br>
+    <span class="audit-meta">${l.user_email || 'System'} at ${new Date(l.created_at).toLocaleString()}</span></div>
+  `).join('') || '<p>No logs found for this date range.</p>';
+}
+
 async function initializeAppData(silent = false) {
   if (!dbClient) return notify("Database connection unavailable.");
-
   if (!silent) {
     injectSkeleton('dashStats', 4);
     injectSkeleton('equipGrid', 4);
     injectSkeleton('maintTable', 3);
   }
-
   let data = null;
   let dataSource = 'network';
-
   try {
     if (navigator.onLine) {
       data = await DataLayer.fetchAllData();
@@ -445,43 +482,36 @@ async function initializeAppData(silent = false) {
     if (!silent) notify(`Offline mode: showing last saved data (${data ? 'cached' : 'none'})`, 'warning', 5000);
     if (!data) { if (navigator.onLine) handleError("Data Render", error); return; }
   }
-
   try {
     state.globalData = data;
     if (dataSource === 'network') state.globalData._savedAt = Date.now();
-
     const lifecycleResult = await LifecycleEngine.autoUpdateAll(dataSource === 'offline-cache');
     if (lifecycleResult.updated > 0 && !silent) {
       notify(`🔄 Lifecycle health auto-adjusted for ${lifecycleResult.updated} asset(s) based on MTTR/MTBF analytics`, 'info', 4000);
     }
-
     const totalEquip = data.equip.length;
     const operational = data.equip.filter(e => e.status === 'OPERATIONAL').length;
     const openMaint = data.maint.filter(m => m.status !== 'COMPLETED').length;
     const urgent = data.equip.filter(e => e.health_score < 50).length;
-
     document.getElementById('dashStats').innerHTML = `
       <div class="stat"><div class="stat-top"><div class="stat-icon">◈</div><div class="stat-change">System Active</div></div><div class="stat-value">${totalEquip}</div><div class="stat-label">TOTAL EQUIPMENT</div></div>
       <div class="stat"><div class="stat-top"><div class="stat-icon">✓</div><div class="stat-change">Healthy</div></div><div class="stat-value">${operational}</div><div class="stat-label">OPERATIONAL ASSETS</div></div>
       <div class="stat"><div class="stat-top"><div class="stat-icon">⌁</div><div class="stat-change">In Progress</div></div><div class="stat-value">${openMaint}</div><div class="stat-label">MAINTENANCE TASKS</div></div>
       <div class="stat"><div class="stat-top"><div class="stat-icon">!</div><div class="stat-change" style="color:#f87171">${urgent} URGENT</div></div><div class="stat-value">${urgent}</div><div class="stat-label">ATTENTION REQUIRED</div></div>
     `;
-
-    const expWarr = data.warranties.filter(w => w.status === 'EXPIRING SOON').length;
+    const expWarr = data.warranties.filter(w => calculateWarrantyStatus(w.expiry_date) === 'EXPIRING SOON').length;
     document.getElementById('dashAI1').innerHTML = `<h4>⚠ Recurring patterns detected</h4><p>${urgent} asset(s) fall below 50% lifecycle health score. Recommended for preventive inspection.</p>`;
     document.getElementById('dashAI2').innerHTML = `<h4>◉ Lifecycle opportunity</h4><p>${expWarr} warranties expiring within 30 days. Review claim feasibility prior to expiration.</p>`;
-
     const sortedEquip = [...data.equip].sort((a, b) => a.health_score - b.health_score).slice(0, 3);
     document.getElementById('dashCriticalTable').innerHTML = sortedEquip.map(eq => `
-      <tr class="clickable-row" onclick="window.openEditEquipmentModal('${eq.id}')">
+      <tr class="clickable-row" data-action="edit-eq" data-id="${eq.id}">
         <td><div class="equipment"><div class="equip-icon">◈</div><div><strong>${eq.name}</strong><div class="sub-text">${eq.asset_tag || 'N/A'} · ${eq.model || 'N/A'}</div></div></div></td>
         <td><span class="badge ${eq.health_score > 70 ? 'green' : eq.health_score > 40 ? 'orange' : 'red'}">${eq.health_score}% HEALTH</span></td>
         <td><span class="badge ${eq.status === 'OPERATIONAL' ? 'green' : eq.status === 'MAINTENANCE' ? 'orange' : 'red'}">${eq.status}</span></td>
       </tr>
     `).join('');
-
     document.getElementById('equipGrid').innerHTML = data.equip.map(eq => `
-      <div class="asset clickable-card" onclick="window.openEditEquipmentModal('${eq.id}')">
+      <div class="asset clickable-card" data-action="edit-eq" data-id="${eq.id}">
         <div class="asset-head"><div class="asset-symbol">◈</div><span class="badge ${eq.status === 'OPERATIONAL' ? 'green' : eq.status === 'MAINTENANCE' ? 'orange' : 'red'}">${eq.status}</span></div>
         <h3>${eq.name}</h3><p>${eq.asset_tag || 'NO TAG'}<br>${eq.category || 'N/A'} · ${eq.model || 'N/A'}<br>${eq.serial_number || 'N/A'}</p>
         <div class="health-label"><span>LIFECYCLE HEALTH</span><strong>${eq.health_score}%</strong></div>
@@ -489,7 +519,6 @@ async function initializeAppData(silent = false) {
         ${eq._lifecycle ? `<div class="lifecycle-meta" style="margin-top:8px; font-size:9px; color:var(--muted); line-height:1.4;">MTBF: ${eq._lifecycle.mtbf ? eq._lifecycle.mtbf.toFixed(0) + 'd' : '—'} · MTTR: ${eq._lifecycle.mttr ? eq._lifecycle.mttr.toFixed(1) + 'h' : '—'} · Failures: ${eq._lifecycle.total_failures}</div>` : ''}
       </div>
     `).join('');
-
     const compMaint = data.maint.filter(m => m.status === 'COMPLETED');
     const avgMTTR = compMaint.length > 0 ? (compMaint.reduce((s, m) => s + parseFloat(m.mttr_hours || 0), 0) / compMaint.length).toFixed(1) : 0;
     const totalMaintCost = data.maint.reduce((s, m) => s + parseFloat(m.cost || 0), 0);
@@ -499,45 +528,22 @@ async function initializeAppData(silent = false) {
       <div class="stat"><div class="stat-value">${avgMTTR}h</div><div class="stat-label">AVERAGE MTTR</div></div>
       <div class="stat"><div class="stat-value">Rs.${(totalMaintCost/1000).toFixed(1)}K</div><div class="stat-label">TOTAL MAINT COST</div></div>
     `;
-    
-    // OVERDUE FLAG LOGIC
-    document.getElementById('maintTable').innerHTML = data.maint.map(m => {
-      const isOverdue = m.status !== 'COMPLETED' && m.due_date && (() => {
-        const d = new Date(m.due_date);
-        if (!isNaN(d)) d.setHours(23, 59, 59);
-        return d < new Date();
-      })();
-      return `
-      <tr class="clickable-row" onclick="window.openEditWorkOrderModal('${m.id}')">
-        <td>${m.work_order_number || 'WO-SYS'}</td>
-        <td>${m.equipment ? m.equipment.name : 'Unknown Asset'}</td>
-        <td><span class="badge ${m.type === 'PREVENTIVE' ? 'blue' : 'red'}">${m.type}</span></td>
-        <td>${m.technician || 'Unassigned'}</td>
-        <td>Rs. ${(m.cost || 0).toLocaleString()}</td>
-        <td>
-          <span class="badge ${m.status === 'PENDING' ? 'orange' : m.status === 'IN PROGRESS' ? 'blue' : 'green'}">${m.status}</span>
-          ${isOverdue ? '<span class="badge red" style="margin-left:5px;">OVERDUE</span>' : ''}
-        </td>
-      </tr>`;
-    }).join('');
-    
+    renderMaintenanceTable(data.maint);
     const warrStatuses = data.warranties.map(w => calculateWarrantyStatus(w.expiry_date));
     const aW = warrStatuses.filter(s => s === 'ACTIVE').length;
     const eW = warrStatuses.filter(s => s === 'EXPIRING SOON').length;
     const xW = warrStatuses.filter(s => s === 'EXPIRED').length;
     const cV = data.warranties.reduce((s, w) => s + parseFloat(w.claim_value || 0), 0);
-    
     document.getElementById('warrStats').innerHTML = `
       <div class="stat"><div class="stat-value">${aW}</div><div class="stat-label">ACTIVE WARRANTIES</div></div>
       <div class="stat"><div class="stat-value">${eW}</div><div class="stat-label">EXPIRING SOON</div></div>
       <div class="stat"><div class="stat-value">${xW}</div><div class="stat-label">EXPIRED</div></div>
       <div class="stat"><div class="stat-value">Rs.${(cV/1000).toFixed(0)}K</div><div class="stat-label">POTENTIAL CLAIM VALUE</div></div>
     `;
-    
     document.getElementById('warrTable').innerHTML = data.warranties.map(w => {
-      const status = calculateWarrantyStatus(w.expiry_date); // DYNAMIC STATUS
+      const status = calculateWarrantyStatus(w.expiry_date);
       return `
-      <tr class="clickable-row" onclick="window.openEditWarrantyModal('${w.id}')">
+      <tr class="clickable-row" data-action="edit-warr" data-id="${w.id}">
         <td>${w.equipment ? w.equipment.name : 'Unknown Asset'}</td>
         <td>${w.supplier || 'N/A'}</td>
         <td>${w.start_date ? new Date(w.start_date).toLocaleDateString() : 'N/A'}</td>
@@ -545,8 +551,6 @@ async function initializeAppData(silent = false) {
         <td><span class="badge ${status === 'ACTIVE' ? 'green' : status === 'EXPIRING SOON' ? 'orange' : 'red'}">${status}</span></td>
       </tr>`;
     }).join('');
-
-
     const tP = data.inventory.reduce((s, i) => s + (i.stock_quantity || 0), 0);
     const lS = data.inventory.filter(i => i.status === 'LOW STOCK').length;
     const oS = data.inventory.filter(i => i.status === 'OUT OF STOCK').length;
@@ -557,7 +561,7 @@ async function initializeAppData(silent = false) {
       <div class="stat"><div class="stat-value">${oS}</div><div class="stat-label">OUT OF STOCK</div></div>
     `;
     document.getElementById('invTable').innerHTML = data.inventory.map(i => `
-      <tr class="clickable-row" onclick="window.openEditInventoryModal('${i.id}')">
+      <tr class="clickable-row" data-action="edit-inv" data-id="${i.id}">
         <td>${i.name}</td>
         <td>${i.part_number || 'N/A'}</td>
         <td>${i.equipment ? i.equipment.name : 'Generic'}</td>
@@ -566,20 +570,11 @@ async function initializeAppData(silent = false) {
         <td><span class="badge ${i.status === 'AVAILABLE' ? 'green' : i.status === 'LOW STOCK' ? 'orange' : 'red'}">${i.status}</span></td>
       </tr>
     `).join('');
-
-    if (data.logs) {
-      document.getElementById('auditLogList').innerHTML = data.logs.map(l => `
-        <div class="audit-item"><strong>${l.action}</strong> - ${l.details}<br>
-        <span class="audit-meta">${l.user_email || 'System'} at ${new Date(l.created_at).toLocaleString()}</span></div>
-      `).join('');
-    }
-
+    if (data.logs) renderAuditLogs(data.logs);
     const tcoSelect = document.getElementById('tco-equipment-select');
     if (tcoSelect) tcoSelect.innerHTML = '<option value="">Select Equipment...</option>' + data.equip.map(e => `<option value="${e.id}">${e.name} (${e.asset_tag || 'No Tag'})</option>`).join('');
-
     MaintenanceAnalytics.renderDashboardStats();
     updatePendingSyncBadge();
-
     try {
       const divertedAssets = data.maint.filter(m => m.status === 'COMPLETED' && m.type === 'CORRECTIVE').length;
       const eWasteDiverted = divertedAssets * 50; 
@@ -598,28 +593,12 @@ async function initializeAppData(silent = false) {
       if (elEwaste) elEwaste.innerText = eWasteDiverted.toLocaleString() + ' kg';
       if (elEnergy) elEnergy.innerText = energySaved.toLocaleString() + ' kWh';
     } catch (e) {}
-
     renderSustainabilityKPIs();
-    
+    checkAndNotifyOverdue();
     if (silent) {
       state.chartRenderStatus.dashboard = false;
       state.chartRenderStatus.analytics = false;
       const activePage = document.querySelector('.page.active')?.id;
-      if (activePage === 'dashboard') renderDashboardCharts();
-      if (activePage === 'analytics') { MaintenanceAnalytics.renderDashboardStats(); renderAnalyticsCharts(); renderEsgChart(); }
-    } else {
-      renderDashboardCharts();
-      renderEsgChart();
-    }
-  } catch (error) {
-    if (navigator.onLine) handleError("Data Render", error);
-  }
-
-  if (silent) {
-      state.chartRenderStatus.dashboard = false;
-      state.chartRenderStatus.analytics = false;
-      const activePage = document.querySelector('.page.active')?.id;
-      // Defer chart rendering to prevent UI blocking
       setTimeout(() => {
         if (activePage === 'dashboard') renderDashboardCharts();
         if (activePage === 'analytics') { MaintenanceAnalytics.renderDashboardStats(); renderAnalyticsCharts(); renderEsgChart(); }
@@ -630,20 +609,35 @@ async function initializeAppData(silent = false) {
         renderEsgChart();
       }, 50);
     }
+  } catch (error) {
+    if (navigator.onLine) handleError("Data Render", error);
+  }
 }
-window.initializeAppData = initializeAppData;
-window.askAI = askAI;
-window.handleLogin = handleLogin;
-window.handleLogout = handleLogout;
-window.continueAsGuest = continueAsGuest;
-window.toggleSidebar = () => { document.getElementById("sidebar").classList.toggle("open"); document.getElementById("sidebarOverlay").classList.toggle("show"); };
-window.toggleFullscreen = () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); };
-window.navigate = (page) => UI.navigate(page);
 
-// --- Bootstrap ---
+function checkAndNotifyOverdue() {
+  if (Notification.permission !== 'granted' || !document.hidden) return;
+  const overdueCount = state.globalData.maint.filter(m => {
+    return m.status !== 'COMPLETED' && new Date(m.due_date) < new Date() && !m._notified;
+  }).length;
+  if (overdueCount > 0) {
+    new Notification('EquipIQ Alert', {
+      body: `${overdueCount} work order(s) are now OVERDUE. Please review the maintenance queue.`,
+      icon: '/favicon.png'
+    });
+    state.globalData.maint.forEach(m => { if (new Date(m.due_date) < new Date()) m._notified = true; });
+  }
+}
+
+// Expose to router
+const app = {
+  handleLogin, continueAsGuest, handleLogout, askAI, approveEmailStats, filterAudit, loadMoreMaint
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   initSupabase();
   UI.initListeners();
+  initRouter(app);
+  initDragAndDrop();
   checkSession();
 
   const commitBtn = document.getElementById('commit-ocr-data');
@@ -676,7 +670,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (event.data?.type === 'SW_UPDATED') {
         notify('App updated to latest version. Reloading...', 'success', 2000);
-        // Force reload to apply new cache and clear stale DOM
         setTimeout(() => window.location.reload(), 2000);
       }
     });
@@ -689,7 +682,6 @@ document.addEventListener('DOMContentLoaded', () => {
       status.className = "badge green";
     }
     notify('Connection restored. Syncing offline changes...', 'info', 4000);
-
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.ready.then(reg => {
         if ('sync' in reg) {
@@ -741,23 +733,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // Chart.js Global Defaults
   if (typeof Chart !== 'undefined') {
     Chart.defaults.font.family = "'Outfit', sans-serif";
     Chart.defaults.font.size = 10;
     Chart.defaults.color = "#7d879b";
   }
-
-  // --- Check for QR Code direct links ---
-  const urlParams = new URLSearchParams(window.location.search);
-  const eqId = urlParams.get('id');
-  if (eqId) {
-    const checkData = setInterval(() => {
-      if (state.globalData && state.globalData.equip) {
-        clearInterval(checkData);
-        openMasterPropertiesModal(eqId);
-      }
-    }, 500);
-  }
-  
 });

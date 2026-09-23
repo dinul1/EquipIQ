@@ -1,5 +1,6 @@
+// js/analytics.js
 import { state, dbClient, logAudit, handleError } from './state.js';
-import { notify } from './ui.js';
+import { UI, notify } from './ui.js';
 import { OfflineStore } from './offline.js';
 
 // --- Web Worker for Financial Calculations ---
@@ -88,7 +89,6 @@ export const LifecycleEngine = {
   computeHealthScore(eq, maintenanceRecords, warranties) {
     let score = 100;
     const reasons = [];
-
     const mttr = this.calculateMTTR(eq, maintenanceRecords);
     const mtbf = this.calculateMTBF(eq, maintenanceRecords);
     const allFailures = (maintenanceRecords || []).filter(m => m.equipment_id === eq.id && m.type === 'CORRECTIVE');
@@ -145,6 +145,32 @@ export const LifecycleEngine = {
     return { score, mttr, mtbf, total_failures: allFailures.length, recent_failures: recentFailures.length, reasons, computed_at: new Date().toISOString() };
   },
 
+  calculateFailurePrediction(eq, maintenanceRecords) {
+    const failures = (maintenanceRecords || [])
+      .filter(m => m.equipment_id === eq.id && m.type === 'CORRECTIVE')
+      .map(m => new Date(m.due_date || m.created_at).getTime())
+      .sort((a, b) => a - b);
+
+    if (failures.length < 2) return null;
+
+    // Simple linear regression on time intervals between failures
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 1; i < failures.length; i++) {
+      const interval = (failures[i] - failures[i-1]) / 86400000; // days
+      sumX += i; sumY += interval; sumXY += i * interval; sumX2 += i * i;
+    }
+    const n = failures.length - 1;
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    
+    // Project next failure interval
+    const lastInterval = (failures[failures.length-1] - failures[failures.length-2]) / 86400000;
+    const nextInterval = lastInterval + slope; // If slope is negative, failing faster
+    const nextFailureDate = new Date(failures[failures.length-1] + nextInterval * 86400000);
+    
+    const daysUntilFailure = Math.round((nextFailureDate - Date.now()) / 86400000);
+    return daysUntilFailure > 0 ? `${daysUntilFailure}d` : 'Imminent';
+  },
+
   async autoUpdateAll(skipPersist = false) {
     if (!state.globalData || !state.globalData.equip) return { updated: 0, details: [] };
     let updated = 0;
@@ -160,7 +186,19 @@ export const LifecycleEngine = {
       
       eq._lifecycle = result;
       eq.health_score = result.score;
-      eq.status = autoStatus; // Force status update locally
+      eq.status = autoStatus;
+
+      // PREDICTIVE MAINTENANCE
+      eq._lifecycle.predicted_failure = this.calculateFailurePrediction(eq, state.globalData.maint);
+      
+      // AUTOMATED AI EXPLANATION (Only if major drop and online)
+      if (delta > 20 && !skipPersist && navigator.onLine) {
+        try {
+          const prompt = `Explain in one sentence why asset ${eq.name} health dropped by ${delta} points based on MTTR: ${result.mttr}h, MTBF: ${result.mtbf}d.`;
+          const res = await ResilientAI.invoke(prompt, { skipCache: true });
+          eq._lifecycle.ai_reason = res.text;
+        } catch(e) { eq._lifecycle.ai_reason = 'AI analysis unavailable.'; }
+      }
 
       if (delta >= 3 && !skipPersist) {
         if (navigator.onLine && dbClient) {
@@ -267,13 +305,11 @@ export const PriceFetcher = {
         }
       } catch(e) {}
     }
-
     const cached = await OfflineStore.getCachedPrice(assetKey);
     if (cached && cached.price > 0) {
       const ageDays = (Date.now() - cached.timestamp) / 86400000;
       if (ageDays < 7) return { ...cached, source_label: `Cached (${ageDays.toFixed(1)}d old)` };
     }
-
     const heuristic = this.heuristicEstimate(assetName, assetModel, assetId);
     return { ...heuristic, source_label: 'Heuristic Estimate' };
   },
@@ -289,10 +325,8 @@ export const PriceFetcher = {
           signal: controller.signal
         });
         clearTimeout(timeout);
-
         if (error) throw new Error(error.message);
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-
         let price = null;
         if (parsed) {
           if (typeof parsed.price === 'number') price = parsed.price;
@@ -305,7 +339,6 @@ export const PriceFetcher = {
             if (found) price = parseFloat(found[1]);
           }
         }
-
         if (price && !isNaN(price) && price > 0) {
           return {
             price: Math.round(price * 100) / 100,
@@ -331,7 +364,6 @@ export const PriceFetcher = {
       const inflated = parseFloat(eq.purchase_price) * Math.pow(1.04, Math.max(0, ageYears));
       return { price: Math.round(inflated), source: 'heuristic-inflation', confidence: 0.5, currency: 'Rs', fetched_at: new Date().toISOString() };
     }
-
     const categoryPrices = {
       motor: 45000, pump: 38000, compressor: 95000, cnc: 250000,
       generator: 180000, transformer: 120000, hvac: 85000, robot: 220000,
@@ -378,13 +410,11 @@ export function renderSustainabilityKPIs() {
   if (!state.globalData) return;
   let totalPotentialCarbon = 0, totalOperationalCarbon = 0;
   const criticalAssets = state.globalData.equip.filter(e => e.health_score < 40).length;
-
   state.globalData.equip.forEach(eq => {
     const embodiedCarbon = getStandardEmbodiedCarbon(eq.name);
     totalPotentialCarbon += embodiedCarbon;
     totalOperationalCarbon += (eq.annual_emissions || 0); 
   });
-
   const sustStats = document.getElementById('sustStats');
   if (!sustStats) return;
   sustStats.innerHTML = `
@@ -392,12 +422,10 @@ export function renderSustainabilityKPIs() {
     <div class="stat"><div class="stat-top"><div class="stat-icon">🌍</div></div><div class="stat-value">${Math.round(totalPotentialCarbon).toLocaleString()}</div><div class="stat-label">EMBODIED CARBON AT RISK (KG)</div></div>
     <div class="stat"><div class="stat-top"><div class="stat-icon">!</div></div><div class="stat-value">${criticalAssets}</div><div class="stat-label">CRITICAL ASSETS</div></div>
   `;
-
   const tbody = document.querySelector('#sustTableBody');
   if (!tbody) return;
   tbody.innerHTML = '';
   const engine = new FinancialDecisionEngine();
-  
   state.globalData.equip.forEach(eq => {
     const operationalEmissions = eq.annual_emissions || 0;
     const waste = eq.annual_waste || 0; 
@@ -417,44 +445,42 @@ export function openNewSustainabilityModal() {
     <div class="modal-input-group"><label class="modal-label">Select Asset</label><select id="sust-asset-id" class="modal-input"><option value="">Select...</option>${options}</select></div>
     <div class="modal-input-group"><label class="modal-label">Annual CO₂e (kg)</label><input id="sust-emissions" type="number" class="modal-input" placeholder="e.g. 1200" /></div>
     <div class="modal-input-group"><label class="modal-label">Annual Waste (kg)</label><input id="sust-waste" type="number" class="modal-input" placeholder="e.g. 30" /></div>
-    <div class="modal-actions"><button class="btn btn-primary" onclick="window.saveSustainabilityData()">Save</button></div>
+    <div class="modal-actions"><button class="btn btn-primary" data-action="save-sust">Save</button></div>
   `);
-  window.saveSustainabilityData = async () => {
-    const id = document.getElementById('sust-asset-id').value;
-    const emissions = parseFloat(document.getElementById('sust-emissions').value) || 0;
-    const waste = parseFloat(document.getElementById('sust-waste').value) || 0;
-    if (!id) { notify('Select an asset'); return; }
-    const asset = state.globalData.equip.find(e => e.id === id);
-    if (asset) {
-      asset.annual_emissions = emissions;
-      asset.annual_waste = waste;
-      notify('Sustainability data saved locally');
-      UI.closeModal();
-      renderSustainabilityKPIs();
-      if (dbClient) await dbClient.from('equipment').update({ annual_emissions: emissions, annual_waste: waste }).eq('id', asset.id);
-    } else { notify('Asset not found'); }
-  };
 }
+
+async function saveSustainabilityData() {
+  const id = document.getElementById('sust-asset-id').value;
+  const emissions = parseFloat(document.getElementById('sust-emissions').value) || 0;
+  const waste = parseFloat(document.getElementById('sust-waste').value) || 0;
+  if (!id) { notify('Select an asset'); return; }
+  const asset = state.globalData.equip.find(e => e.id === id);
+  if (asset) {
+    asset.annual_emissions = emissions;
+    asset.annual_waste = waste;
+    notify('Sustainability data saved locally');
+    UI.closeModal();
+    renderSustainabilityKPIs();
+    if (dbClient) await dbClient.from('equipment').update({ annual_emissions: emissions, annual_waste: waste }).eq('id', asset.id);
+  } else { notify('Asset not found'); }
+}
+// Expose for router
+window.saveSustainabilityData = saveSustainabilityData;
 
 export function loadComponentForTCO(id) {
   const eq = state.globalData.equip.find(e => e.id === id);
   if (!eq) return;
   document.getElementById('replace-price').value = eq.purchase_price || '';
   document.getElementById('replace-salvage').value = '';
-  
   const estCarbon = getStandardEmbodiedCarbon(eq.name);
   document.getElementById('replace-mfg-carbon').value = estCarbon;
-  
   const recentWOs = state.globalData.maint.filter(m => m.equipment_id === id);
   const totalRepairCost = recentWOs.reduce((s, m) => s + parseFloat(m.cost || 0), 0);
   document.getElementById('repair-quote').value = totalRepairCost > 0 ? totalRepairCost.toFixed(2) : '';
-  
   const failures = recentWOs.filter(m => m.type === 'CORRECTIVE').length;
   document.getElementById('repair-failures').value = failures;
-  
   const avgMttr = recentWOs.length > 0 ? (recentWOs.reduce((s, m) => s + parseFloat(m.mttr_hours||0), 0) / recentWOs.length).toFixed(1) : 0;
   document.getElementById('repair-mttr').value = avgMttr;
-  
   document.getElementById('depreciation-summary').innerText = `Loaded telemetry, repair history (Cost: Rs.${totalRepairCost.toFixed(0)}, MTTR: ${avgMttr}h) & estimated embodied carbon (${estCarbon} kg CO2e). Fetch market rate to auto-update Replacement Purchase Price.`;
   notify(`Loaded asset telemetry for ${eq.name}.`);
 }
@@ -464,10 +490,8 @@ export async function fetchCurrentMarketPrice() {
   if (!eqId) return notify("Please select a component first.");
   const eq = state.globalData.equip.find(e => e.id === eqId);
   if (!eq) return notify("Equipment not found.");
-
   notify(`Querying market for ${eq.name}...`);
   document.getElementById('depreciation-summary').innerHTML = '<div class="skeleton" style="height:40px;"></div>';
-
   try {
     const result = await PriceFetcher.fetchMarketPrice(eq.name, eq.model, eq.id);
     if (result && result.price > 0) {
@@ -511,10 +535,8 @@ export function calculateRvR() {
     energyCost: parseFloat(document.getElementById('replace-energy').value) || 0,
     mfgCarbon: parseFloat(document.getElementById('replace-mfg-carbon').value) || 0
   };
-
   notify("Running heavy financial analysis in background...", 'info', 2000);
   tcoWorker.postMessage({ rp, pp, horizon, rate });
-
   tcoWorker.onmessage = (e) => {
     const res = e.data;
     const fmt = (v) => "Rs. " + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -522,13 +544,11 @@ export function calculateRvR() {
     document.getElementById('replace-total').innerText = fmt(res.tco_replace);
     const recBox = document.getElementById('tco-recommendation-box');
     recBox.classList.remove('hidden');
-    
     document.getElementById('tco-rec-title').innerText = res.recommendation === "REPAIR" ? "✓ REPAIR RECOMMENDED" : "⟳ REPLACE RECOMMENDED";
     document.getElementById('tco-rec-title').style.color = res.recommendation === "REPAIR" ? "#4ade80" : "#f87171";
     document.getElementById('tco-rec-text').innerText = `Based on a ${res.horizon_years}-year NPV projection, ${res.recommendation.toLowerCase()}ing the asset yields lower financial expenditure. Financial advantage: ${fmt(res.financial_delta)}.`;
     document.getElementById('tco-env-text').innerText = res.env_conclusion || '';
     document.getElementById('tco-audit-trail').innerHTML = `<strong>AUDIT TRAIL</strong><br>Timestamp: ${new Date(res.timestamp).toLocaleString()}<br>Horizon: ${res.horizon_years} Years | Discount Rate: ${(rate*100).toFixed(1)}%<br>Repair TCO: ${fmt(res.tco_repair)} | Replace TCO: ${fmt(res.tco_replace)}<br>Scope 3 Carbon Impact: ${res.carbon_saved.toLocaleString()} kg CO2e`;
-
     logAudit('TCO_CALCULATION', `Executed Holistic TCO & Carbon analysis. Recommendation: ${res.recommendation}`);
     notify('Holistic analysis complete', 'success');
   };
@@ -537,16 +557,13 @@ export function calculateRvR() {
 export async function generateExecutiveReport() {
   const eqId = document.getElementById('tco-equipment-select').value;
   if (!eqId) return notify("Select equipment first to generate a report.");
-  
   const eq = state.globalData.equip.find(e => e.id === eqId);
   const horizon = parseFloat(document.getElementById('tco-horizon').value) || 3;
   const rate = (parseFloat(document.getElementById('tco-rate').value) || 8) / 100;
-  
   const repairCost = parseFloat(document.getElementById('repair-quote').value) || 0;
   const replacePrice = parseFloat(document.getElementById('replace-price').value) || 0;
   const replaceSetup = parseFloat(document.getElementById('replace-setup').value) || 0;
   const replaceTotalInit = replacePrice + replaceSetup;
-  
   const heuristicThreshold = replaceTotalInit * 0.5;
   const heuristicTriggered = repairCost > heuristicThreshold;
   const carbonSaved = parseFloat(document.getElementById('replace-mfg-carbon').value) || 0;
@@ -554,7 +571,6 @@ export async function generateExecutiveReport() {
   const compMaint = state.globalData.maint.filter(m => m.equipment_id === eq.id && m.status === 'COMPLETED');
   const mttrAvg = compMaint.length > 0 ? (compMaint.reduce((s,m)=>s+parseFloat(m.mttr_hours||0),0)/compMaint.length).toFixed(1) : 0;
   const riskIndex = compMaint.length > 2 ? "High (Frequent Failures)" : compMaint.length > 0 ? "Moderate (Stable MTBF Trend)" : "Low (No recent failures)";
-
   notify("Generating AI Executive Summary...");
   let aiNarrative = "AI summary unavailable.";
   try {
@@ -646,7 +662,6 @@ export async function generateExecutiveReport() {
       </div>
     </div>
   `;
-
   const printDiv = document.getElementById('printable-report');
   printDiv.innerHTML = reportHtml;
   printDiv.classList.remove('hidden');
@@ -715,7 +730,6 @@ export function sanitizeAIResponse(data) {
     else if (data.content) text = sanitizeAIResponse(data.content);
     else { try { text = JSON.stringify(data, null, 2); } catch (e) { text = "Received an unrecognized structured response."; } }
   } else { text = String(data); }
-
   text = text.replace(/```json/g, '').replace(/```/g, '').trim();
   if (text.startsWith('{') || text.startsWith('[')) {
     try {
@@ -730,18 +744,14 @@ export function sanitizeAIResponse(data) {
 }
 
 export function calculateWarrantyStatus(expiryDateStr) {
-  if (!expiryDateStr) return 'ACTIVE'; // Fallback for missing dates
-  
+  if (!expiryDateStr) return 'ACTIVE'; 
   const expiry = new Date(expiryDateStr);
   if (isNaN(expiry.getTime())) return 'ACTIVE';
-  
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   expiry.setHours(0, 0, 0, 0);
-  
   const diffTime = expiry.getTime() - today.getTime();
   const diffDays = diffTime / (1000 * 60 * 60 * 24);
-  
   if (diffDays < 0) return 'EXPIRED';
   if (diffDays <= 30) return 'EXPIRING SOON';
   return 'ACTIVE';
@@ -754,22 +764,17 @@ export function sendEmailStats() {
   const critical = state.globalData.equip.filter(e => e.health_score < 40).length;
   const openWOs = state.globalData.maint.filter(m => m.status !== 'COMPLETED').length;
   const body = `EquipIQ System Report:%0A%0A- Total Equipment: ${totalEq}%0A- Critical Assets: ${critical}%0A- Open Work Orders: ${openWOs}`;
-  
   window.location.href = `mailto:?subject=EquipIQ%20System%20Stats&body=${body}`;
   return JSON.stringify({ status: "success", message: "Email client opened with system stats." });
 }
-
-// Add to agentTools
 agentTools.sendEmailStats = sendEmailStats;
 
 // QR Master Properties Modal (Read-Only)
 export function openMasterPropertiesModal(id) {
   const eq = state.globalData.equip.find(e => e.id === id);
   if (!eq) return notify("Asset not found.");
-  
   const maintHistory = state.globalData.maint.filter(m => m.equipment_id === id);
   const activeWarr = state.globalData.warranties.find(w => w.equipment_id === id && calculateWarrantyStatus(w.expiry_date) !== 'EXPIRED');
-
   UI.openModal(`Asset Profile: ${eq.name}`, `
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
       <div>
@@ -778,7 +783,6 @@ export function openMasterPropertiesModal(id) {
       </div>
       <span class="badge ${eq.health_score < 40 ? 'red' : eq.health_score < 75 ? 'orange' : 'green'}">${eq.health_score}% HEALTH</span>
     </div>
-    
     <div class="grid2" style="font-size:13px; margin-bottom:20px; grid-template-columns: 1fr 1fr;">
       <div><strong>Status:</strong> <span class="badge ${eq.status === 'OPERATIONAL' ? 'green' : eq.status === 'MAINTENANCE' ? 'orange' : 'red'}">${eq.status}</span></div>
       <div><strong>Category:</strong> ${eq.category || 'N/A'}</div>
@@ -787,7 +791,6 @@ export function openMasterPropertiesModal(id) {
       <div><strong>Warranty Status:</strong> ${activeWarr ? calculateWarrantyStatus(activeWarr.expiry_date) : 'NO ACTIVE WARRANTY'}</div>
       <div><strong>MTTR:</strong> ${eq._lifecycle?.mttr ? eq._lifecycle.mttr.toFixed(1) + 'h' : 'N/A'}</div>
     </div>
-    
     <h4 style="margin-bottom:10px; border-bottom:1px solid var(--line); padding-bottom:5px;">Maintenance History</h4>
     <div style="max-height:200px; overflow-y:auto;">
       ${maintHistory.map(m => `

@@ -1,15 +1,14 @@
 // =========================================================
-// EquipIQ Service Worker v3.0.0 — Updatable Cache & DB Cache
+// EquipIQ Service Worker v3.0.1 — Updatable Cache & DB Cache
 // =========================================================
 
-const SW_VERSION = 'equipiq-v3.0.0';
+const SW_VERSION = 'equipiq-v3.0.1';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const RUNTIME_CACHE = `${SW_VERSION}-runtime`;
 const API_CACHE = `${SW_VERSION}-api`;
 const DB_NAME = 'EquipIQOfflineDB';
 const DB_VERSION = 2;
 
-// Core assets required for the app shell to load offline
 const CORE_ASSETS = [
   '/',
   '/index.html',
@@ -21,11 +20,18 @@ const CORE_ASSETS = [
   '/js/analytics.js',
   '/js/crud.js',
   '/js/ocr.js',
-  '/manifest.json'
+  '/js/router.js',
+  '/manifest.json',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js'
 ];
 
 const CDN_PATTERNS = [
   /cdn\.jsdelivr\.net/,
+  /cdnjs\.cloudflare\.com/,
   /fonts\.googleapis\.com/,
   /fonts\.gstatic\.com/
 ];
@@ -38,7 +44,7 @@ self.addEventListener('install', (event) => {
       .then(cache => cache.addAll(CORE_ASSETS).catch(err => {
         console.warn('[SW] Some core assets failed to cache:', err);
       }))
-      .then(() => self.skipWaiting()) // Force activation immediately
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -47,12 +53,11 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then(keys => Promise.all(
         keys
-          .filter(key => !key.startsWith(SW_VERSION)) // Delete ANY cache not matching current version
+          .filter(key => !key.startsWith(SW_VERSION))
           .map(key => caches.delete(key))
       ))
-      .then(() => self.clients.claim()) // Take control of all open clients
+      .then(() => self.clients.claim())
       .then(() => {
-        // Tell the UI to reload so it uses the new cached assets
         return self.clients.matchAll().then(clients => {
           clients.forEach(c => c.postMessage({ type: 'SW_UPDATED', version: SW_VERSION }));
         });
@@ -93,7 +98,8 @@ self.addEventListener('fetch', (event) => {
   if (!url.protocol.startsWith('http')) return;
   if (req.headers.get('upgrade') === 'websocket') return;
 
-  // 1. Handle Mutations (POST, PATCH, DELETE) - Queue if offline
+  if (req.method === 'OPTIONS') return;
+
   if (req.method !== 'GET') {
     if (SUPABASE_PATTERN.test(url.hostname)) {
       event.respondWith(handleMutation(req));
@@ -101,46 +107,37 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Ignore Supabase Auth calls
   if (SUPABASE_PATTERN.test(url.hostname) && url.pathname.includes('/auth/v1/')) return;
 
-  // 2. Handle Supabase Database GET requests (The DB Cache)
   if (SUPABASE_PATTERN.test(url.hostname) && url.pathname.includes('/rest/v1/')) {
     event.respondWith(handleApiGet(req));
     return;
   }
 
-  // 3. Handle Supabase Edge Functions (Never cache, let app handle fallback)
   if (SUPABASE_PATTERN.test(url.hostname) && url.pathname.includes('/functions/v1/')) {
     event.respondWith(handleEdgeFunction(req));
     return;
   }
 
-  // 4. Handle CDN assets (Chart.js, Supabase Client, Tesseract)
   if (CDN_PATTERNS.some(p => p.test(url.hostname))) {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
 
-  // 5. Handle App Navigations
   if (req.mode === 'navigate') {
     event.respondWith(networkFirstNavigation(req));
     return;
   }
 
-  // 6. Handle Local Static Assets
   if (url.origin === self.location.origin) {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
 });
 
-// --- Caching Strategies ---
-
 async function staleWhileRevalidate(req) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(req);
-
   const networkPromise = fetch(req)
     .then(res => {
       if (res && (res.ok || res.type === 'opaque')) {
@@ -152,12 +149,10 @@ async function staleWhileRevalidate(req) {
 
   if (cached) {
     networkPromise.catch(()=>{});
-    return cached; // Return cached immediately, update in background
+    return cached;
   }
-
   const networkRes = await networkPromise;
   if (networkRes) return networkRes;
-
   return caches.match('/index.html');
 }
 
@@ -181,21 +176,18 @@ async function networkFirstNavigation(req) {
 async function handleApiGet(req) {
   const cache = await caches.open(API_CACHE);
   const cached = await cache.match(req);
-
   try {
     const res = await fetch(req);
     if (res && res.ok) {
-      cache.put(req, res.clone()).catch(()=>{}); // Save DB JSON to cache
+      cache.put(req, res.clone()).catch(()=>{});
     }
     return res;
   } catch(e) {
-    // OFFLINE FALLBACK: Return cached DB JSON so graphs/tables render
     if (cached) {
       const headers = new Headers(cached.headers);
       headers.set('X-EquipIQ-Source', 'offline-cache');
       return new Response(await cached.blob(), { status: 200, headers });
     }
-    // If no cache, return empty array to prevent UI crashes
     return new Response(JSON.stringify([]), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -217,8 +209,6 @@ async function handleEdgeFunction(req) {
   }
 }
 
-// --- Offline Mutations Queue (Background Sync) ---
-
 async function handleMutation(req) {
   try {
     const res = await fetch(req.clone());
@@ -233,7 +223,6 @@ function synthesizeResponse(req) {
   const prefer = req.headers.get('Prefer') || '';
   const method = req.method;
   const wantsRepresentation = prefer.includes('return=representation');
-
   let body = '';
   if (wantsRepresentation) {
     if (method === 'POST') {
@@ -244,7 +233,6 @@ function synthesizeResponse(req) {
       body = JSON.stringify([]);
     }
   }
-
   return new Response(body, {
     status: 201,
     headers: {
@@ -299,9 +287,7 @@ async function queueMutation(req) {
   const cloned = req.clone();
   let body = '';
   try { body = await cloned.text(); } catch(e) {}
-
   const clientId = await getClientId();
-  
   const mutation = {
     url: req.url,
     method: req.method,
@@ -311,7 +297,6 @@ async function queueMutation(req) {
     client_id: clientId,
     iso_timestamp: new Date().toISOString()
   };
-
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('mutations', 'readwrite');
@@ -326,6 +311,7 @@ async function queueMutation(req) {
   });
 }
 
+// FIX: Use openCursor to prevent InvalidStateError race conditions
 async function flushQueue() {
   const db = await openDB();
   if (!db.objectStoreNames.contains('mutations')) return;
@@ -333,58 +319,68 @@ async function flushQueue() {
   return new Promise((resolve) => {
     const tx = db.transaction('mutations', 'readwrite');
     const store = tx.objectStore('mutations');
-    const getAll = store.getAll();
-    const getAllKeys = store.getAllKeys();
+    const req = store.openCursor();
+    const mutations = [];
+    const keys = [];
 
-    getAll.onsuccess = async () => {
-      const mutations = getAll.result || [];
-      const keys = getAllKeys.result || [];
-
-      let successCount = 0;
-      let conflictDetected = false;
-
-      for (let i = 0; i < mutations.length; i++) {
-        const m = mutations[i];
-        try {
-          const headers = {
-            ...m.headers,
-            'X-Client-Id': m.client_id,
-            'X-Timestamp': m.iso_timestamp
-          };
-
-          const res = await fetch(m.url, {
-            method: m.method,
-            headers: headers,
-            body: m.body
-          });
-
-          if (res.ok) {
-            const delTx = db.transaction('mutations', 'readwrite');
-            delTx.objectStore('mutations').delete(keys[i]);
-            successCount++;
-          } else if (res.status === 409) {
-            conflictDetected = true;
-            const delTx = db.transaction('mutations', 'readwrite');
-            delTx.objectStore('mutations').delete(keys[i]); // Drop conflicting mutation
-          } else if (res.status >= 400 && res.status < 500) {
-            const delTx = db.transaction('mutations', 'readwrite');
-            delTx.objectStore('mutations').delete(keys[i]);
-          }
-        } catch(e) {
-          break; // Network still down
-        }
+    req.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        mutations.push(cursor.value);
+        keys.push(cursor.primaryKey);
+        cursor.continue();
+      } else {
+        // All data safely retrieved
+        processMutations(mutations, keys, db, resolve);
       }
-
-      self.clients.matchAll().then(clients => {
-        clients.forEach(c => c.postMessage({
-          type: conflictDetected ? 'SYNC_CONFLICT' : 'SYNC_COMPLETE',
-          flushed: successCount,
-          remaining: mutations.length - successCount
-        }));
-      });
-      resolve();
     };
+    req.onerror = () => resolve();
   });
+}
+
+async function processMutations(mutations, keys, db, resolve) {
+  let successCount = 0;
+  let conflictDetected = false;
+
+  for (let i = 0; i < mutations.length; i++) {
+    const m = mutations[i];
+    try {
+      const headers = {
+        ...m.headers,
+        'X-Client-Id': m.client_id,
+        'X-Timestamp': m.iso_timestamp
+      };
+      const res = await fetch(m.url, {
+        method: m.method,
+        headers: headers,
+        body: m.body
+      });
+
+      if (res.ok) {
+        const delTx = db.transaction('mutations', 'readwrite');
+        delTx.objectStore('mutations').delete(keys[i]);
+        successCount++;
+      } else if (res.status === 409) {
+        conflictDetected = true;
+        const delTx = db.transaction('mutations', 'readwrite');
+        delTx.objectStore('mutations').delete(keys[i]);
+      } else if (res.status >= 400 && res.status < 500) {
+        const delTx = db.transaction('mutations', 'readwrite');
+        delTx.objectStore('mutations').delete(keys[i]);
+      }
+    } catch(e) {
+      break; // Network still down
+    }
+  }
+
+  self.clients.matchAll().then(clients => {
+    clients.forEach(c => c.postMessage({
+      type: conflictDetected ? 'SYNC_CONFLICT' : 'SYNC_COMPLETE',
+      flushed: successCount,
+      remaining: mutations.length - successCount
+    }));
+  });
+  resolve();
 }
 
 self.addEventListener('sync', (event) => {

@@ -12,8 +12,8 @@ export const state = {
     myEsgChart: null
 };
 
-export const SUPABASE_URL = 'https://rqajjdsywpvjjlptsnha.supabase.co';
-export const SUPABASE_KEY = 'sb_publishable_OGdxE3LmpXuWCa8LErCymA_NDpouldp';
+export const SUPABASE_URL = 'https://your-project.supabase.co';
+export const SUPABASE_KEY = 'your-anon-key';
 
 export let dbClient = null;
 

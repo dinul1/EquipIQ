@@ -274,3 +274,19 @@ textarea.modal-input { resize: vertical; min-height: 60px; font-family: 'Outfit'
     #printable-report { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 40px; }
     @page { size: A4; margin: 0; }
 }
+
+/* QuaggaJS Barcode Scanner Styling */
+#barcode-reader video,
+#barcode-reader canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    border-radius: 8px;
+}
+
+#barcode-reader canvas.drawingBuffer {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    pointer-events: none !important;
+}
